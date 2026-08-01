@@ -103,6 +103,20 @@ go test ./...
 Early, and measured on amd64 only. The `simd` package underneath is verified on
 amd64 and arm64 NEON and under emulation elsewhere.
 
+
+## The rest of the family
+
+All built on [simd.go](https://github.com/sebishogun/simd), which generates its
+kernels once from C and ships them as committed assembly for nine instruction
+sets — so none of these needs cgo, and none is amd64-only.
+
+| | |
+|---|---|
+| [**simd.go**](https://github.com/sebishogun/simd) | 463 operations over slices, bytes and text. The kernels everything else is built from. |
+| [**simdblas**](https://github.com/sebishogun/simdblas) | A BLAS backend for gonum. One `blas64.Use` call and `mat`, `stat` and `optimize` run on it. |
+| [**simdjson**](https://github.com/sebishogun/simdjson) | Structural-index JSON parsing. Faster than minio/simdjson-go, and not amd64-only. |
+| [**simdvec**](https://github.com/sebishogun/simdvec) | Embedding search whose whole index scan is one matrix-vector product. |
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Depends on
