@@ -317,12 +317,20 @@ comes from `checkCount` (source) and probe confirmation of the error path,
 not from the differential corpus. The tests assert `(stdlib err
 != nil) == (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
 
-**Overlap exclusion.** A quoted field containing `\r\n` is well-formed but
-parses differently (§7 note): simdcsv preserves it, `encoding/csv` normalizes
-it to `\n`. The declared overlap therefore excludes CRLF-normalization-
-sensitive quoted data until a policy decision, and the differential corpus
-currently contains no such case — a recorded verification gap, pinned by
-[plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case) (TDD).
+**Overlap: CRLF in a quoted field — decided, parity.** A quoted field
+containing `\r\n` used to parse differently: simdcsv preserved it,
+`encoding/csv` reduces it to `\n`. Plan Task 0/Stage 0 decided for parity,
+because a field whose bytes differ is silent data corruption for anyone
+swapping this in, and because the exclusion put a permanent hole in the
+strongest gate this package has. `quotedRecord` now normalizes, and the
+class is **inside** the declared overlap with six cases in the differential
+corpus.
+
+A lone `\r` is data and is preserved, by both packages. The cost is gated:
+one scan of the record decides whether any field can need normalizing, so a
+record with no CR keeps the zero-copy path unchanged, and a field that does
+carry a CRLF is copied into the same scratch the doubled-quote unescape
+already builds. That cost has not been measured on a quiet machine.
 
 ### Missing from `simdcsv` (present in `encoding/csv`)
 

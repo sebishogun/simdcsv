@@ -46,12 +46,12 @@ behavior must be a *decision*, not an accident:
   the same contract work;
 - a fuzz harness with the documented divergence classes carved out.
 
-Task 0/Stage 0 of the plan runs first within this workstream: the one
-well-formed divergence with an open policy — `\r\n` inside a quoted field,
-preserved here, normalized to `\n` by `encoding/csv` (architecture.md §12
-divergence 6). Until it is decided, the differential overlap excludes
-CRLF-normalization-sensitive quoted data and the corpus has no such case
-(recorded verification gap).
+Task 0/Stage 0 is **done**: the one well-formed divergence with an open
+policy — `\r\n` inside a quoted field — was decided for parity with
+`encoding/csv`, since a field whose bytes differ is silent corruption for
+anyone swapping this in and the exclusion left a permanent hole in the
+differential. The class is now inside the declared overlap with six corpus
+cases (architecture.md §12).
 
 Bar: every malformed input class has a tested, documented contract; no
 "undefined" rows remain; the quoted-CRLF policy is decided and pinned.

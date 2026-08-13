@@ -117,11 +117,10 @@ Divergences (all empirical, see `docs/architecture.md` §12 for the table):
 - malformed quotes are accepted with this package's own splits (`a"b`,
   `"a"b,c`, unclosed quotes, bare `"`, `"""` all parse; stdlib errors on all);
 - error text differs and there is no `*csv.ParseError`;
-- **quoted-field CRLF normalization:** `\r\n` inside a quoted field is
-  preserved here but normalized to `\n` by `encoding/csv`. This is a
-  well-formed divergence; the declared overlap excludes CRLF-normalization-
-  sensitive quoted data until a policy decision, and the differential corpus
-  currently has no such case (verification gap, Task 0/Stage 0 in the plan);
+- **quoted-field CRLF normalization: parity, no longer a divergence.**
+  `\r\n` inside a quoted field is reduced to `\n` by both packages, and a
+  lone `\r` is preserved by both. Decided by Task 0/Stage 0 of the plan;
+  six cases are in the differential corpus;
 - stdlib rejects `Comma` equal to `0`, `'\r'`, `'\n'`, `'"'`, `utf8.RuneError`
   (or any non-UTF-8 rune), and equal to its `Comment` field when configured;
   simdcsv accepts any byte;
@@ -131,8 +130,7 @@ Divergences (all empirical, see `docs/architecture.md` §12 for the table):
   entries all alias the last one.
 
 Differential tests against `encoding/csv` may only run within the declared
-overlap (well-formed input excluding CRLF-normalization-sensitive quoted
-data). Malformed-input behavior is a documented contract of its own, tested
+overlap (well-formed input). Malformed-input behavior is a documented contract of its own, tested
 by its own cases, not compared to stdlib.
 
 ## Concurrency

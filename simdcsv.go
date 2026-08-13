@@ -261,6 +261,14 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 	fields := r.fields[:0]
 	r.unq = r.unq[:0]
 
+	// A CRLF inside a quoted field becomes an LF, which is what encoding/csv
+	// does and therefore what a caller swapping this in already expects. One
+	// scan of the record decides whether any field can need it, so a record
+	// with no CR keeps the zero-copy path exactly as it was; only a field that
+	// actually carries a CRLF pays a copy, and it is the same buffer the
+	// doubled-quote unescape already builds.
+	hasCR := simd.IndexByte(rec, '\r') >= 0
+
 	i := 0
 	for {
 		if i < len(rec) && rec[i] == '"' {
@@ -277,10 +285,10 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 				i += q
 				if i+1 < len(rec) && rec[i+1] == '"' {
 					if simple {
-						buf = append([]byte(nil), rec[start:i]...)
+						buf = appendUnCRLF(nil, rec[start:i], hasCR)
 						simple = false
 					} else {
-						buf = append(buf, rec[start:i]...)
+						buf = appendUnCRLF(buf, rec[start:i], hasCR)
 					}
 					buf = append(buf, '"')
 					i += 2
@@ -289,11 +297,15 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 				}
 				break
 			}
-			if simple {
-				fields = append(fields, rec[start:min(i, len(rec))])
-			} else {
-				buf = append(buf, rec[start:min(i, len(rec))]...)
+			seg := rec[start:min(i, len(rec))]
+			switch {
+			case !simple:
+				buf = appendUnCRLF(buf, seg, hasCR)
 				fields = append(fields, buf)
+			case hasCR && hasCRLF(seg):
+				fields = append(fields, appendUnCRLF(nil, seg, true))
+			default:
+				fields = append(fields, seg)
 			}
 			if i < len(rec) {
 				i++
@@ -323,6 +335,45 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 	}
 	r.fields = fields
 	return fields
+}
+
+// hasCRLF reports whether s contains a CR immediately followed by an LF. A
+// lone CR is data and stays -- encoding/csv keeps it too.
+func hasCRLF(s []byte) bool {
+	for i := 0; ; {
+		j := simd.IndexByte(s[i:], '\r')
+		if j < 0 {
+			return false
+		}
+		i += j
+		if i+1 < len(s) && s[i+1] == '\n' {
+			return true
+		}
+		i++
+	}
+}
+
+// appendUnCRLF appends s to dst with every CRLF reduced to LF. When the record
+// held no CR at all the caller passes false and this is a plain append.
+func appendUnCRLF(dst, s []byte, hasCR bool) []byte {
+	if !hasCR {
+		return append(dst, s...)
+	}
+	for i := 0; i < len(s); {
+		j := simd.IndexByte(s[i:], '\r')
+		if j < 0 {
+			return append(dst, s[i:]...)
+		}
+		j += i
+		if j+1 < len(s) && s[j+1] == '\n' {
+			dst = append(dst, s[i:j]...) // drop the CR, keep the LF
+			i = j + 1
+			continue
+		}
+		dst = append(dst, s[i:j+1]...) // a lone CR is data
+		i = j + 1
+	}
+	return dst
 }
 
 // slowRecord handles a record containing a quote.

@@ -56,9 +56,19 @@ func TestMatchesStdlib(t *testing.T) {
 		"a\nb\nc\n", // single column
 		"1,2\n3,4\n5,6\n",
 		`"a","b"` + "\n",
-		`"a,b",c` + "\n",  // delimiter inside quotes
-		"\"a\nb\",c\n",    // newline inside quotes
-		`"a""b",c` + "\n", // escaped quote
+		`"a,b",c` + "\n", // delimiter inside quotes
+		"\"a\nb\",c\n",   // newline inside quotes
+		// CRLF inside a quoted field: encoding/csv reduces it to LF, and so
+		// does this now. A lone CR is data and stays. Task 0 of the production
+		// plan decided this; before it, the whole class was excluded from the
+		// declared overlap because the two disagreed.
+		"\"a\r\nb\",c\r\n",
+		"\"a\r\n\r\nb\",c\n",
+		"x,\"y\r\nz\"\r\n",
+		"\"a\rb\",c\n",
+		"\"a\r\",c\n",
+		"\"a\r\nb\"\"c\",d\n",
+		`"a""b",c` + "\n",                          // escaped quote
 		"plain,row\n\"quoted,x\",y\nplain2,row2\n", // mixed
 		"a,b\n\"c\",d\ne,f\n",
 		strings.Repeat("x,y,z\n", 100),

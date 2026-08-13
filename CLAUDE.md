@@ -35,11 +35,11 @@ independent; `true` reuses the outer slice — consume before the next `Read`.
 The whole input is read on the first `Read` and retained; fields alias it
 unless unescaped (doubled quotes), in which case they are fresh copies.
 
-One well-formed divergence to keep straight: `\r\n` inside a quoted field is
-preserved here, while `encoding/csv` normalizes it to `\n`. The declared
-differential overlap excludes CRLF-normalization-sensitive quoted data, the
-corpus currently has no such case (verification gap), and pinning the policy
-is Task 0/Stage 0 of the production plan — never claim parity there.
+`\r\n` inside a quoted field is reduced to `\n` here and by `encoding/csv`;
+a lone `\r` is data in both. That used to be a divergence with the class
+excluded from the differential overlap; Task 0/Stage 0 of the production plan
+decided it for parity, and six cases are now in the corpus. A record with no
+CR keeps the zero-copy path; only a field carrying a CRLF is copied.
 
 ## Non-goals — do not drift into these
 

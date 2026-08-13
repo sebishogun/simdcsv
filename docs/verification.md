@@ -33,11 +33,10 @@ Documentation work adds:
 ## Differential testing within the declared overlap
 
 `simdcsv_test.go` compares this package against `encoding/csv` on the same
-bytes — but only within the **declared overlap**: well-formed input
-**excluding CRLF-normalization-sensitive quoted data**. A quoted field
-containing `\r\n` parses differently in the two packages (simdcsv preserves
-it, `encoding/csv` normalizes it to `\n` — architecture.md §12 divergence 6),
-so such inputs are not parity material until a policy decision.
+bytes, within the **declared overlap**: well-formed input. A quoted field
+containing `\r\n` was excluded until plan Task 0/Stage 0 decided it for
+parity; both packages now reduce it to `\n`, both preserve a lone `\r`, and
+six such cases are in the corpus (architecture.md §12).
 `checkAgainstStdlib` (simdcsv_test.go:16) asserts error-parity and
 field-parity (`Strings()` equality). The corpus:
 
