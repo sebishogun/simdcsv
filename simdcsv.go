@@ -298,17 +298,38 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 				break
 			}
 			seg := rec[start:min(i, len(rec))]
+			if i < len(rec) {
+				i++ // step over the closing quote
+			}
+			// Bytes between the closing quote and the delimiter are junk in a
+			// well-formed file -- `"a"b,c`. They are still input, so they join
+			// the field they follow rather than being dropped. A reader that
+			// never errors on content must not silently lose content either,
+			// and the previous behavior lost the `b` and invented an empty
+			// field in its place.
+			junkStart := i
+			if i < len(rec) {
+				if c := simd.IndexByte(rec[i:], r.Comma); c < 0 {
+					i = len(rec)
+				} else {
+					i += c
+				}
+			}
+			junk := rec[junkStart:i]
 			switch {
 			case !simple:
 				buf = appendUnCRLF(buf, seg, hasCR)
+				buf = appendUnCRLF(buf, junk, hasCR)
 				fields = append(fields, buf)
+			case len(junk) > 0:
+				// seg and junk are not contiguous -- the closing quote sits
+				// between them -- so this one needs a buffer.
+				f := appendUnCRLF(nil, seg, hasCR)
+				fields = append(fields, appendUnCRLF(f, junk, hasCR))
 			case hasCR && hasCRLF(seg):
 				fields = append(fields, appendUnCRLF(nil, seg, true))
 			default:
 				fields = append(fields, seg)
-			}
-			if i < len(rec) {
-				i++
 			}
 		} else {
 			start := i

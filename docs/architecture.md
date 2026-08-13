@@ -209,27 +209,41 @@ short version: `simdcsv` **never errors on input content** — the only errors
 are `io.ReadAll` failure, `io.EOF`, and the field-count check. Everything
 malformed parses, with its own splits. `encoding/csv` rejects most of it.
 
-| input | `simdcsv` result | `encoding/csv` |
-|---|---|---|
-| `a"b,c\n` | `["a\"b" "c"]` — quote in unquoted field is data | error: bare `"` in non-quoted-field |
-| `"a"b,c\n` | `["a" "" "c"]` — stray `b` consumed, empty field in its place | error: extraneous or missing `"` |
-| `"a,b\n` (unclosed) | `["a,b"]` — field runs to end of record | error: missing `"` |
-| `"a""b\n` (unclosed after doubled) | `["a\"b"]` | error |
-| `"\n` (lone quote) | `[""]` | error |
-| `"""\n` | `["\""]` | error |
-| `"a,b` (EOF mid-quote) | `["a,b"]` — truncated quoted field accepted | error |
-| no trailing newline (`a,b`) | `["a" "b"]` | `["a" "b"]` — same |
-| trailing `\r` at EOF (`a,b\r`) | `["a" "b"]` | `["a" "b"]` — same |
+Every row below has a decision, pinned by a case in `malformed_test.go`. The
+rule behind the decisions: this package accepts everything, and therefore
+**must never lose a byte**. A parser that accepts an input and silently drops
+part of it is worse than one that rejects it, because nothing downstream can
+tell that anything went missing.
+
+| input | `simdcsv` result | decision | `encoding/csv` |
+|---|---|---|---|
+| `a"b,c\n` | `["a\"b" "c"]` — quote in unquoted field is data | accept as-is | error: bare `"` in non-quoted-field |
+| `"a"b,c\n` | `["ab" "c"]` — junk after the closing quote joins its field | **changed**: was `["a" "" "c"]`, which dropped the `b` and invented an empty field | error: extraneous or missing `"` |
+| `"a"x"b",c\n` | `["ax\"b\"" "c"]` — junk verbatim, quotes included | accept (same rule) | error |
+| `"a" ,c\n` | `["a " "c"]` | accept (same rule; no whitespace special case) | error |
+| `"a,b\n` (unclosed) | `["a,b"]` — field runs to end of record | accept as-is | error: missing `"` |
+| `"a""b\n` (unclosed after doubled) | `["a\"b"]` | accept as-is | error |
+| `"\n` (lone quote) | `[""]` | accept as-is | error |
+| `"""\n` | `["\""]` | accept as-is | error |
+| `"a,b` (EOF mid-quote) | `["a,b"]` — truncated quoted field accepted | accept as-is | error |
+| no trailing newline (`a,b`) | `["a" "b"]` | parity | `["a" "b"]` — same |
+| trailing `\r` at EOF (`a,b\r`) | `["a" "b"]` | parity | `["a" "b"]` — same |
+
+**Why not `LazyQuotes`.** `encoding/csv` has a mode that also accepts most of
+this, and it was probed rather than assumed: it does not agree, and the
+difference matters. Under `LazyQuotes` an unterminated quote consumes the
+rest of the **file**, newlines included, so `"a,b\n` swallows every following
+record. Here it ends with its record and the damage stops there. Four of
+eleven probed rows agree; the rest differ this way, so `LazyQuotes` is not a
+parity target and the differential does not use it.
 
 Truncated records (EOF without newline) are legal on both paths; the final
 `\r` before EOF is stripped by both. Blank lines (`""`, `"\r\n"`) are skipped
 by both. A record of `","` is a record of two empty fields in both.
 
-The one *well-formed* input class that does **not** agree is `\r\n` inside a
-quoted field: simdcsv preserves the `\r\n`, `encoding/csv` normalizes it to
-`\n` (probe-verified with exact bytes). It is a divergence, not a malformed
-case — it lives in §12, is excluded from the declared overlap, and is pinned
-by [plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case).
+`\r\n` inside a quoted field used to be a well-formed divergence. Task 0
+decided it for parity: both packages reduce it to `\n` and both keep a lone
+`\r`, so the class is inside the declared overlap now (§12).
 
 ## 8. Limits and resource model
 
