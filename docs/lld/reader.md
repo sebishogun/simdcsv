@@ -84,8 +84,9 @@ Fast-path field cut, one vector scan per record:
    rebuilt with `[:0]` + append.
 
 - **Zero copies.** Every field is a subslice of `buf`.
-- **Allocation:** none per record (fast path, `ReuseRecord` either value —
-  `own` adds the outer copy under `false`).
+- **Allocation (fast path):** 0 per record under `ReuseRecord=true`; 1
+  (outer `[][]byte` copy) per record under `ReuseRecord=false` — the `own`
+  copy, architecture.md §9.
 - **Limit:** `int32` positions bound a single record to < 2^31 bytes
   (architecture.md §8).
 - **Correctness coupling:** the `[len(line)+1]` sizing guarantees room for

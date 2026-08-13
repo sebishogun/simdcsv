@@ -44,7 +44,7 @@ Two consequences shape everything else:
 | `idx` | `int32` delimiter-position scratch | `split`, grown to longest line |
 | `qidx`, `nidx` | quote/newline position scratch | **never** — vestigial, §14 |
 | `fields` | reused outer `[][]byte` for the current record | every record parse |
-| `unq` | unescape scratch | reset per quoted record, **never written** — vestigial, §14 |
+| `unq` | unescape scratch | reset per quoted record, **never read** — vestigial, §14 |
 | `num` | field count learned from the first record | first record under `FieldsPerRecord == 0` |
 | `line` | physical line counter, for error messages | every `nextLine` call, including skipped blanks |
 
@@ -229,7 +229,7 @@ The one *well-formed* input class that does **not** agree is `\r\n` inside a
 quoted field: simdcsv preserves the `\r\n`, `encoding/csv` normalizes it to
 `\n` (probe-verified with exact bytes). It is a divergence, not a malformed
 case — it lives in §12, is excluded from the declared overlap, and is pinned
-by plan Task 0/Stage 0.
+by [plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case).
 
 ## 8. Limits and resource model
 
@@ -306,12 +306,14 @@ The complete error surface:
 CRLF-normalization-sensitive quoted data)
 
 Verified by the differential tests in `simdcsv_test.go` (hand-written corpus
-plus 400 seeded-random rows, `TestMatchesStdlib`, `TestMatchesStdlibRandom`)
+plus 400 seeded-random inputs, `TestMatchesStdlib`, `TestMatchesStdlibRandom`)
 and by probe: quoted delimiters, embedded `\n` newlines, doubled quotes, blank
 lines, CRLF line endings, trailing `\r` at EOF, empty fields,
-no-trailing-newline files, field-count behavior (`FieldsPerRecord` 0/+/−), and
-the record-with-error shape of `Read`. The tests assert `(stdlib err != nil)
-== (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
+no-trailing-newline files, and the record-with-error shape of `Read`.
+Field-count behavior (`FieldsPerRecord` 0/+/−) is covered by the dedicated
+`TestFieldsPerRecord` and by the source (`checkCount`) with probe
+confirmation — not by the differential corpus. The tests assert `(stdlib err
+!= nil) == (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
 
 **Overlap exclusion.** A quoted field containing `\r\n` is well-formed but
 parses differently (§7 note): simdcsv preserves it, `encoding/csv` normalizes
@@ -362,7 +364,7 @@ docs task does not edit Go); they are contract work in the roadmap
    times what strconv manages per value"). Neither function exists in the
    package (grep: no definition anywhere). Broken doc links; `go vet` does
    not flag them.
-2. `simdcsv.go:80-84` — `Reader.Comma`'s comment: "A rune delimiter falls
+2. `simdcsv.go:80-83` — `Reader.Comma`'s comment: "A rune delimiter falls
    back to encoding/csv; see [NewReader]." There is no fallback — `Comma` is
    a byte and `NewReader`'s comment says nothing about runes. A rune constant
    above `0xFF` does not compile into it; a typed rune truncates.
@@ -383,6 +385,6 @@ from the source:
   positions") — declared, never read or written. They belonged to the
   quadratic whole-buffer design that `recordEnd` replaced (§4.1).
 - `unq` ("scratch for unescaping doubled quotes") — reset to empty in
-  `quotedRecord` and never written; the unescape buffers are per-field fresh
+  `quotedRecord` and never read; the unescape buffers are per-field fresh
   allocations instead (§4.2). Its disuse is why `own` double-copies
   unescaped fields under `ReuseRecord=false` (§9).

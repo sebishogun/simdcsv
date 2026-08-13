@@ -45,7 +45,7 @@ field-parity (`Strings()` equality). The corpus:
   input, no trailing newline, blank lines, CRLF line endings, empty fields,
   single column, quoted delimiters, embedded `\n` newlines, doubled quotes,
   mixed plain/quoted rows, 100-row stress.
-- `TestMatchesStdlibRandom` (simdcsv_test.go:72) — 400 seeded-random rows
+- `TestMatchesStdlibRandom` (simdcsv_test.go:72) — 400 seeded-random inputs
   (`rand.NewPCG(1, 2)`) over atoms including quoted and multi-line fields
   (`\n` only inside quotes, never `\r\n`). Fixed seed: the corpus is
   reproducible and does not rot.
@@ -53,10 +53,11 @@ field-parity (`Strings()` equality). The corpus:
   a fast-path field must alias the reader's buffer (pointer-range check via
   `unsafe`, `aliases` at simdcsv_test.go:194). A suite where every test
   passes by delegation is not testing this package.
-- `TestFieldsPerRecord` — count learning, positive enforcement, `-1`
-  ragged. `TestSemicolonDelimiter` — custom byte delimiter.
+- `TestFieldsPerRecord` — count learning, learned-count enforcement, `-1`
+  ragged (no explicit positive-value case in the suite).
+  `TestSemicolonDelimiter` — custom byte delimiter.
 
-**Current verification gap (recorded, pinned by plan Task 0/Stage 0):** the
+**Current verification gap (recorded, pinned by [plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case)):** the
 corpus contains no quoted-field CRLF case. Until the Task 0 policy decision
 and its TDD case land, the overlap definition above is what makes the
 existing suite sound — do not add a `\r\n`-inside-quotes differential case
@@ -90,7 +91,7 @@ Seed corpus: the `TestMatchesStdlib` inputs plus the §7 table rows.
 Budgets: short per-input timeouts (no hang on pathological records),
 `-race` on a reduced corpus, a fixed random seed recorded with the harness.
 Outcome policy: a differential failure is a bug and blocks; a divergence
-outside the overlap is a plan decision (roadmap workstream 1), not a bug —
+outside the overlap is a plan decision ([roadmap workstream 1](roadmap.md#1-harden-malformed-input-safety-and-contracts)), not a bug —
 recorded, never "fixed" silently.
 
 ## Benchmarks
@@ -148,7 +149,7 @@ made outside amd64, and the noise floor makes a gate dishonest.
   Any text that states a dependency or release version is checked against
   go.mod and the tag list before it is written.
 - Release claims: nothing is a release until it is tagged and published;
-  the README's status section is the only place release status is stated.
+  the README's Status section is authoritative for release status.
 - The API is pre-1.0; doc text must not imply stability.
 
 ## Documentation gates
