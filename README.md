@@ -1,123 +1,137 @@
 # simdcsv
 
-**A CSV reader for Go that finds every delimiter at once instead of one byte at
-a time.** Built on [simd.go](https://github.com/sebishogun/simd). No cgo.
+`simdcsv` is a whole-buffer CSV reader for Go. It returns fields as `[]byte` and
+uses [simd.go](https://github.com/sebishogun/simd) to find delimiters in
+quote-free records with one vector scan. Quoted records use a separate parser.
+No cgo is required.
 
-```
+Requires Go 1.25 or later. The current main branch uses
+`github.com/sebishogun/simd v1.20.0`; the published v0.1.0 release uses
+`simd v1.2.0`.
+
+```sh
 go get github.com/sebishogun/simdcsv
 ```
 
 ```go
 r := simdcsv.NewReader(f)
-r.ReuseRecord = true
 
 for {
 	rec, err := r.Read()
 	if err == io.EOF {
 		break
 	}
-	name := rec.Field(0)   // []byte into the input, no copy
-	...
+	if err != nil {
+		return err
+	}
+	name := rec.Field(0) // borrowed []byte; copy if it must outlive the input
+	_ = name
 }
 ```
 
-The shape is `encoding/csv`'s. `Comma`, `FieldsPerRecord` and `ReuseRecord` mean
-what they mean there, and every input this package accepts produces the same
-records the standard library produces — there is a differential test over 400
-randomised inputs that says so.
+## API
 
-## Numbers
+`NewReader(io.Reader)` creates a reader with comma as its delimiter. The first
+call to `Read` consumes the complete input with `io.ReadAll`; construction
+itself does not read.
 
-Zen 5, 20,000 rows, `ReuseRecord` on both sides, worse of two runs:
+The reader exposes three controls:
 
-| | encoding/csv | simdcsv | |
-|---|---|---|---|
-| 16 columns, unquoted | 3.54 ms | 1.84 ms | **1.92×** |
-| 4 columns, unquoted | 1.06 ms | 0.71 ms | **1.49×** |
-| 16 columns, quoted | 3.74 ms | 3.50 ms | 1.07× |
-| 4 columns, quoted | 1.10 ms | 1.35 ms | **0.81×** |
+- `Comma` is a single-byte delimiter and defaults to `,`.
+- `FieldsPerRecord` follows `encoding/csv`: a positive value requires that
+  count, zero learns it from the first record, and a negative value disables
+  the check.
+- `ReuseRecord` reuses the record's outer field slice. When enabled, consume a
+  record before the next `Read`; do not retain its `Record` or `Fields()` value.
 
-**The last row is the point.** A file where every field is quoted is about 20%
-*slower* than the standard library, and there is no way around it that was worth
-having — see below.
+`Read` returns `io.EOF` after the final record. A field-count error is returned
+with the record that caused it. `ReadAll` returns records read before the first
+non-EOF error; leave `ReuseRecord` false when those records must be independent.
 
-## Why unquoted is faster
+`Record` provides:
 
-`encoding/csv` walks the input a byte at a time, deciding at each one whether it
-is a delimiter, a quote, a newline or data. That is a dependent branch per byte.
+- `Len()` for the field count;
+- `Field(i)` for one field, with the usual out-of-range panic;
+- `Fields()` for the internal `[][]byte` without copying;
+- `Strings()` for an allocated `[]string` copy.
 
-This finds them all at once. One vector compare writes the position of every
-delimiter in a record, and the fields are then subslices between those
-positions — no branch per byte, and no copy per field, because a field points
-into the input buffer rather than into a fresh string.
+## Ownership and memory
 
-## Why quoted is not
+The entire input is retained in memory. Most fields are subslices of that input
+and are not copied. A quoted field containing doubled quotes must be unescaped
+into separate storage. With the default `ReuseRecord=false`, the record's outer
+slice and unescaped fields remain valid after later reads; ordinary fields still
+keep the full input buffer alive.
 
-A quote changes what the bytes after it mean: a comma inside a quoted field is
-data, and so is a newline. So a quoted record has to be walked, and this package
-is then doing the standard library's work with a layer on top.
+`Fields()` exposes the record's internal slice, and each field is mutable
+`[]byte`. Copy data before mutating it if other records or the reader may still
+observe the same input buffer. For an input too large to buffer, use
+`encoding/csv`.
 
-Two ways out were tried and measured, and both made it worse:
+## CSV compatibility
 
-- **Hand quote-heavy files to `encoding/csv` wholesale** — 0.38×. Its records
-  are `[]string`, and copying them into `[][]byte` costs more than the parsing
-  saved.
-- **Skip the vector call for short spans**, since `simd.IndexByte` costs about
-  1.4 ns to call and a quoted record is a sequence of short fields — 1.30× on
-  the *unquoted* case it was supposed to leave alone.
+The tested well-formed surface agrees with `encoding/csv` for comma-separated
+records, blank lines, CRLF, empty fields, quoted delimiters, embedded newlines,
+and doubled quotes. `Comma`, `FieldsPerRecord`, and `ReuseRecord` have analogous
+roles, but this is not a drop-in `encoding/csv.Reader`.
 
-Neither is in the code. The 0.81× is.
+This package does not implement `Comment`, `LazyQuotes`, `TrimLeadingSpace`,
+`FieldPos`, `InputOffset`, rune delimiters, or standard-library `ParseError`
+values. It is not a CSV validator: malformed quote syntax may be accepted or
+reported differently from `encoding/csv`. Validate untrusted CSV with the
+standard library when matching its rejection behavior matters.
 
-## The trade this package makes
+## Performance
 
-**It reads the whole input into memory** on the first `Read`. Finding every
-delimiter at once needs a buffer to find them in. For a stream too large to
-hold, use `encoding/csv`.
+The v0.1.0 release recorded this Zen 5 comparison on 20,000 generated rows,
+with `ReuseRecord` enabled on both readers. The benchmark source runs both
+implementations on the same bytes; the raw release output was not retained.
 
-**Fields are `[]byte`, not `string`.** That is where a large part of the win
-comes from: `encoding/csv` must copy each field because its buffer is reused,
-and here the caller decides. `Record.Strings()` copies if that is what you want.
+| input | `encoding/csv` | `simdcsv` | ratio |
+|---|---:|---:|---:|
+| 16 columns, unquoted | 3.54 ms | 1.84 ms | **1.92x** |
+| 4 columns, unquoted | 1.06 ms | 0.71 ms | **1.49x** |
+| 16 columns, quoted | 3.74 ms | 3.50 ms | 1.07x |
+| 4 columns, quoted | 1.10 ms | 1.35 ms | **0.81x** |
 
-**`Comma` is a `byte`, not a `rune`.** The vector scan compares bytes. A
-multi-byte delimiter would need a substring search per record, which costs more
-than it saves.
+The loss remains part of the contract: four-column, fully quoted input ran at
+0.81x, about 23% slower than `encoding/csv`. Quotes make delimiter meaning
+stateful, so the vector split cannot run. Handing quoted records to
+`encoding/csv` and skipping SIMD on short spans were both measured and rejected
+because they made another part of the workload slower.
 
-## Correctness
+The benchmark is committed in `simdcsv_test.go`:
 
-Every test compares against `encoding/csv` on the same input — it is the
-definition of correct here. That covers the hand-written cases (embedded
-newlines, doubled quotes, `\r\n`, ragged records, blank lines) and 400
-randomised ones built from atoms chosen to collide: unterminated quotes, quoted
-delimiters, empty fields.
-
-There is also a test that the fast path *runs*, because a suite that passed by
-taking the careful path everywhere would look identical to one that worked. It
-checks that a field from an unquoted record aliases the reader's buffer.
-
+```sh
+go test -run '^$' -bench '^BenchmarkRead$' -benchmem -count=6
 ```
+
+The exact release timings are a historical measurement, not a regression gate;
+measure your input mix on the target machine. No wall-clock result is claimed
+outside amd64.
+
+## Verification
+
+```sh
 go test ./...
+go test -race ./...
+go vet ./...
 ```
+
+The suite compares well-formed hand-written and deterministic randomized inputs
+against `encoding/csv`, checks field-count behavior and custom delimiters, and
+asserts that the unquoted path returns fields which alias the input buffer.
 
 ## Status
 
-Early, and measured on amd64 only. The `simd` package underneath is verified on
-amd64 and arm64 NEON and under emulation elsewhere.
+The latest tagged and published release is **v0.1.0**. The current main branch
+uses `simd v1.20.0`; that dependency update is not yet tagged as a simdcsv
+release. Published v0.1.0 uses `simd v1.2.0`. The API is pre-1.0.
 
-
-## The rest of the family
-
-All built on [simd.go](https://github.com/sebishogun/simd), which generates its
-kernels once from C and ships them as committed assembly for nine instruction
-sets — so none of these needs cgo, and none is amd64-only.
-
-| | |
-|---|---|
-| [**simd.go**](https://github.com/sebishogun/simd) | 463 operations over slices, bytes and text. The kernels everything else is built from. |
-| [**simdblas**](https://github.com/sebishogun/simdblas) | A BLAS backend for gonum. One `blas64.Use` call and `mat`, `stat` and `optimize` run on it. |
-| [**simdjson**](https://github.com/sebishogun/simdjson) | Structural-index JSON parsing. Faster than minio/simdjson-go, and not amd64-only. |
-| [**simdvec**](https://github.com/sebishogun/simdvec) | Embedding search whose whole index scan is one matrix-vector product. |
+The maintained inventory of libraries built on `simd` is in the
+[`simd` README](https://github.com/sebishogun/simd#built-on-this).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Depends on
-[simd.go](https://github.com/sebishogun/simd) (MIT).
+MIT. See [LICENSE](LICENSE). `simd` is MIT; the indirect `golang.org/x/sys`
+dependency is BSD-3-Clause.
