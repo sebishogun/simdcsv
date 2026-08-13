@@ -131,6 +131,16 @@ release. Published v0.1.0 uses `simd v1.2.0`. The API is pre-1.0.
 The maintained inventory of libraries built on `simd` is in the
 [`simd` README](https://github.com/sebishogun/simd#built-on-this).
 
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — model, state machines, ownership, allocation, malformed-input behavior, and the exact `encoding/csv` boundary.
+- [docs/lld/reader.md](docs/lld/reader.md) — function-level design of the reader.
+- [docs/verification.md](docs/verification.md) — gates, differential-test rules, fuzz plan, and the measurement methodology.
+- [docs/wrong.md](docs/wrong.md) — the measured dead ends and what shipped instead.
+- [docs/roadmap.md](docs/roadmap.md) — production goals; nothing there is shipped.
+- [docs/plans/2026-08-13-simdcsv-production-design.md](docs/plans/2026-08-13-simdcsv-production-design.md) and [docs/plans/2026-08-13-simdcsv-production.md](docs/plans/2026-08-13-simdcsv-production.md) — the production plan.
+- [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) — agent guidance, self-contained.
+
 ## License
 
 MIT. See [LICENSE](LICENSE). `simd` is MIT; the indirect `golang.org/x/sys`
