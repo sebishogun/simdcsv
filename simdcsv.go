@@ -65,6 +65,8 @@ package simdcsv
 import (
 	"fmt"
 	"io"
+	"unicode"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/sebishogun/simd"
@@ -82,6 +84,16 @@ type Reader struct {
 	// not supported. Unlike encoding/csv no value is rejected either -- any
 	// byte, 0 included, is used as written.
 	Comma byte
+
+	// TrimLeadingSpace drops the leading whitespace of every field, as
+	// encoding/csv's option of the same name does. Trailing whitespace is
+	// kept, and whitespace inside a quoted field is data; a space before an
+	// opening quote is trimmed and the field still parses as quoted.
+	//
+	// Off by default, and it costs nothing when off: the scan runs per field
+	// only when it is set, over the leading whitespace alone. Trimming keeps
+	// the field a subslice, so the zero-copy property survives it.
+	TrimLeadingSpace bool
 
 	// ReuseRecord makes Read return a Record backed by memory that the next
 	// call overwrites, which is what makes it allocation-free.
@@ -206,12 +218,36 @@ func (r *Reader) split(line []byte) [][]byte {
 	start := 0
 	for i := 0; i < n; i++ {
 		p := int(idx[i])
-		fields = append(fields, line[start:p])
+		fields = append(fields, r.trimLeading(line[start:p]))
 		start = p + 1
 	}
-	fields = append(fields, line[start:])
+	fields = append(fields, r.trimLeading(line[start:]))
 	r.fields = fields
 	return fields
+}
+
+// trimLeading drops leading whitespace when TrimLeadingSpace is set. The
+// result is still a subslice of the input, so a trimmed field costs no copy.
+//
+// Whitespace is unicode's, matching encoding/csv, which uses unicode.IsSpace:
+// an ASCII-only rule would trim a NBSP in one package and not the other, which
+// is a new divergence to buy a scan this only runs when asked for.
+func (r *Reader) trimLeading(f []byte) []byte {
+	if !r.TrimLeadingSpace {
+		return f
+	}
+	for len(f) > 0 {
+		c := rune(f[0])
+		size := 1
+		if c >= utf8.RuneSelf {
+			c, size = utf8.DecodeRune(f)
+		}
+		if !unicode.IsSpace(c) {
+			break
+		}
+		f = f[size:]
+	}
+	return f
 }
 
 // recordEnd returns the offset just past the record starting at b[0],
@@ -272,6 +308,13 @@ func (r *Reader) quotedRecord(rec []byte) [][]byte {
 
 	i := 0
 	for {
+		if r.TrimLeadingSpace {
+			// Before deciding quoted or not: a space ahead of the opening
+			// quote is trimmed and the field is still quoted, which is what
+			// encoding/csv does.
+			trimmed := r.trimLeading(rec[i:])
+			i = len(rec) - len(trimmed)
+		}
 		if i < len(rec) && rec[i] == '"' {
 			i++
 			start := i

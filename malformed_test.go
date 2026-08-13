@@ -1,6 +1,7 @@
 package simdcsv
 
 import (
+	"encoding/csv"
 	"strings"
 	"testing"
 )
@@ -274,5 +275,118 @@ func TestReadStillReusesRecords(t *testing.T) {
 	// copy of it beforehand would keep pointing at the old bytes.
 	if got := string(first.Field(0)); got != "b" {
 		t.Fatalf("first record reads %q after a second Read; ReuseRecord stopped reusing", got)
+	}
+}
+
+// TrimLeadingSpace against encoding/csv's option of the same name. The rule
+// has three halves that are easy to get wrong: trailing whitespace stays,
+// whitespace inside a quoted field is data, and a space before an opening
+// quote is trimmed with the field still parsing as quoted.
+func TestTrimLeadingSpaceMatchesStdlib(t *testing.T) {
+	for _, in := range []string{
+		" a, b ,c\n",
+		"\ta,b\n",
+		" \"a\",b\n",
+		"\" a\",b\n",
+		"a,  \n",
+		"  ,x\n",
+		" \n",
+		"a,b\n",
+		"   spaced   ,   x\n",
+		" a,b\n", // NBSP is whitespace to unicode.IsSpace
+	} {
+		sr := csv.NewReader(strings.NewReader(in))
+		sr.TrimLeadingSpace = true
+		sr.FieldsPerRecord = -1
+		want, wantErr := sr.ReadAll()
+
+		r := NewReader(strings.NewReader(in))
+		r.TrimLeadingSpace = true
+		r.FieldsPerRecord = -1
+		got, gotErr := r.ReadAll()
+
+		if (wantErr != nil) != (gotErr != nil) {
+			t.Errorf("input %q: stdlib err=%v, simdcsv err=%v", in, wantErr, gotErr)
+			continue
+		}
+		if wantErr != nil {
+			continue
+		}
+		if len(got) != len(want) {
+			t.Errorf("input %q: %d records, stdlib %d", in, len(got), len(want))
+			continue
+		}
+		for i := range got {
+			gs := got[i].Strings()
+			if len(gs) != len(want[i]) {
+				t.Errorf("input %q record %d: %q, stdlib %q", in, i, gs, want[i])
+				continue
+			}
+			for j := range gs {
+				if gs[j] != want[i][j] {
+					t.Errorf("input %q record %d: %q, stdlib %q", in, i, gs, want[i])
+					break
+				}
+			}
+		}
+	}
+}
+
+// Whitespace after a closing quote is junk, which is malformed input and
+// therefore outside the declared overlap: encoding/csv errors, this package
+// does not. The no-lost-bytes rule still applies, so the junk joins its field
+// and the trailing whitespace survives -- trimming is leading-only.
+func TestTrimLeadingSpaceWithTrailingJunk(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want []string
+	}{
+		{" \"a b\" ,c\n", []string{"a b ", "c"}},
+		{"\t\t\"q\"\t,z\n", []string{"q\t", "z"}},
+	} {
+		r := NewReader(strings.NewReader(c.in))
+		r.TrimLeadingSpace = true
+		got, err := r.ReadAll()
+		if err != nil {
+			t.Fatalf("input %q: %v", c.in, err)
+		}
+		gs := got[0].Strings()
+		for j := range c.want {
+			if gs[j] != c.want[j] {
+				t.Fatalf("input %q: %q, want %q", c.in, gs, c.want)
+			}
+		}
+	}
+}
+
+// Off by default, and off means untouched.
+func TestTrimLeadingSpaceOffByDefault(t *testing.T) {
+	r := NewReader(strings.NewReader(" a, b\n"))
+	if r.TrimLeadingSpace {
+		t.Fatal("TrimLeadingSpace defaults to true")
+	}
+	rec, err := r.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.Strings(); got[0] != " a" || got[1] != " b" {
+		t.Fatalf("fields %q, want the spaces kept", got)
+	}
+}
+
+// Trimming must not cost the zero-copy property: a trimmed field is still a
+// subslice of the input buffer.
+func TestTrimLeadingSpaceStaysZeroCopy(t *testing.T) {
+	r := NewReader(strings.NewReader("   a,   b\n"))
+	r.TrimLeadingSpace = true
+	r.ReuseRecord = true
+	rec, err := r.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, f := range rec.fields {
+		if len(f) != 0 && !aliasesBuf(r.buf, f) {
+			t.Errorf("field %d was copied; trimming should only move the start", i)
+		}
 	}
 }

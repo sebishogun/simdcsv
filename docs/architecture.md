@@ -346,9 +346,24 @@ record with no CR keeps the zero-copy path unchanged, and a field that does
 carry a CRLF is copied into the same scratch the doubled-quote unescape
 already builds. That cost has not been measured on a quiet machine.
 
+### Compatibility options — decisions
+
+Each option `encoding/csv` has and this package does not, with the decision
+and what it rests on. Task 6 of the production plan.
+
+| option | decision | basis |
+|---|---|---|
+| `TrimLeadingSpace` | **shipped** | Composes with both paths and keeps fields as subslices, so a trimmed field costs no copy; the scan runs per field only when the flag is set, and it is off by default. Whitespace is unicode's, as stdlib's is, because an ASCII-only rule would trim a NBSP in one package and not the other — a new divergence bought to save a scan that only runs when asked for. Pinned against stdlib on ten inputs. |
+| `ReadAll` under `ReuseRecord` | **fixed, not an option** | It returned the last record for every entry. See `docs/wrong.md`. |
+| `ReadAll` returning `nil` on error | **refused** | This package returns the records parsed before the error alongside it. The error says where it stopped, and handing back what the input contained is the same posture as never erroring on content. Documented, not silent. |
+| `LazyQuotes` | **refused** | Probed rather than assumed: under it an unterminated quote consumes the rest of the file, newlines included, so one stray byte destroys every following record. This package's unterminated quote ends with its record. Adopting the mode would make malformed input more destructive, not less. |
+| `Comment` | **refused** | A comment line has to be recognised before the record is split, which needs a scan of its own per line and breaks the one-pass property the package is built on. |
+| rune delimiters | **refused** | A multi-byte delimiter needs a substring search per record instead of a byte compare, which is the cost the whole design avoids. `Comma` is a byte and no value is rejected. |
+| `ParseError`-shaped errors | **refused for now** | This package errors only on a read failure, EOF and the field-count check, so there is no parse error to shape. If malformed input ever becomes an error class, this returns with it. |
+
 ### Missing from `simdcsv` (present in `encoding/csv`)
 
-`Comment` (comment lines), `LazyQuotes`, `TrimLeadingSpace`, `FieldPos`,
+`Comment` (comment lines), `LazyQuotes`, `FieldPos`,
 `InputOffset`, `TrailingComma` (deprecated in stdlib), rune `Comma`, and the
 `*csv.ParseError` type with `Err`/`Line`/`Column`/`StartLine`.
 `ReuseRecord` exists in both with different `ReadAll` consequences (§10).
