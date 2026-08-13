@@ -69,9 +69,10 @@ and may change freely.
 1. `README.md` — the surface.
 2. `docs/architecture.md` — model, state machines, ownership, compatibility.
 3. `docs/lld/reader.md` — function-level design.
-4. `docs/wrong.md` — the measured dead ends (do not re-try them).
-5. `docs/roadmap.md`, `docs/plans/` — where it is going; none of it is shipped.
-6. `simdcsv.go`, `simdcsv_test.go` — the source of truth.
+4. `docs/verification.md` — gates, differential-test rules, measurement methodology.
+5. `docs/wrong.md` — the measured dead ends (do not re-try them).
+6. `docs/roadmap.md`, `docs/plans/` — where it is going; none of it is shipped.
+7. `simdcsv.go`, `simdcsv_test.go` — the source of truth.
 
 ## Comments can be stale; code wins
 

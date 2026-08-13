@@ -61,8 +61,8 @@ v0.1.0 is the latest tagged/published release (`simd v1.2.0`, go 1.25.0);
 
 ## Read order
 
-README → `docs/architecture.md` → `docs/lld/reader.md` → `docs/wrong.md` →
-`docs/roadmap.md` + `docs/plans/` → source.
+README → `docs/architecture.md` → `docs/lld/reader.md` → `docs/verification.md` →
+`docs/wrong.md` → `docs/roadmap.md` + `docs/plans/` → source.
 
 ## Concurrency and reuse
 
