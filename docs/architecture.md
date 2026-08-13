@@ -377,11 +377,11 @@ identical, the malformed and error surfaces are not, and one well-formed
 input class (quoted CRLF) is documented as diverging with the policy still
 open.
 
-## 13. Known source-doc defects
+## 13. Source-doc defects — fixed (history)
 
-The package doc comments are stale in four places. None is fixed in code (a
-docs task does not edit Go); they are contract work in the roadmap
-(`docs/plans/2026-08-13-simdcsv-production.md`):
+The package doc comments were stale in four places. All four are corrected;
+`docs/verification.md` carries a grep gate so the two distinctive phrases
+cannot come back. This section is kept as the record of what they claimed:
 
 1. `simdcsv.go:61-63` — package comment promises `[ParseInts]` and
    `[ParseFloats]` ("convert a whole column in one call, which is about five
@@ -399,6 +399,9 @@ docs task does not edit Go); they are contract work in the roadmap
    4700x slower per record (`docs/wrong.md` entry 3).
 4. `simdcsv_test.go:15` — test comment: "the quoted path literally delegates
    to it." Same staleness as 3.
+
+A comment has no compiler, which is why all four survived every gate the
+package ran. The grep gate is the compiler they were missing.
 
 ## 14. Vestigial state
 
