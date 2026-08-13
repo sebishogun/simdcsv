@@ -58,9 +58,8 @@
 // to do it because its buffer is reused; here the caller can decide. [Record]
 // has Strings if a copy is what you want.
 //
-// For numeric data there is a better route again: [ParseInts] and [ParseFloats]
-// convert a whole column in one call, which is about five times what strconv
-// manages per value.
+// For numeric data, [Record.Strings] with strconv is the route; this package
+// ships no column converters.
 package simdcsv
 
 import (
@@ -79,8 +78,9 @@ type Reader struct {
 	//
 	// Unlike encoding/csv this is a byte rather than a rune: the vector scan
 	// compares bytes, and a multi-byte delimiter would need a substring search
-	// per record, which costs more than it saves. A rune delimiter falls back
-	// to encoding/csv; see [NewReader].
+	// per record, which costs more than it saves. A multi-byte delimiter is
+	// not supported. Unlike encoding/csv no value is rejected either -- any
+	// byte, 0 included, is used as written.
 	Comma byte
 
 	// ReuseRecord makes Read return a Record backed by memory that the next
@@ -108,8 +108,9 @@ type Reader struct {
 	num    int      // fields in the first record, once seen
 	line   int
 
-	// Records the fast path cannot take — anything containing a quote — go to
-	// encoding/csv, so the answer is the standard library's answer.
+	// Records the fast path cannot take -- anything containing a quote -- are
+	// parsed in-house by quotedRecord, which handles doubled quotes, CRLF
+	// normalization, and the malformed cases in architecture.md section 7.
 }
 
 // NewReader returns a Reader reading from r.

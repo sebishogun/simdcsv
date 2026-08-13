@@ -11,8 +11,9 @@ import (
 )
 
 // Every input is parsed both ways and the results compared. encoding/csv is the
-// definition of correct here — this package exists to be faster, not different,
-// and the quoted path literally delegates to it.
+// definition of correct inside the declared overlap: this package exists to be
+// faster, not different. Nothing delegates to it -- the quoted path is parsed
+// in-house -- so parity is asserted whichever path a record takes.
 func checkAgainstStdlib(t *testing.T, in string) {
 	t.Helper()
 

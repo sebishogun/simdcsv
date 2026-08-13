@@ -68,6 +68,23 @@ inputs (`a"b`, `"a"b,c`, unclosed quotes) are *documented divergences*
 their own in the production plan, never differential ones. The existing
 random corpus must stay well-formed for the same reason.
 
+## Doc-reference gate
+
+Comments have no compiler, so a doc link to a function that does not exist
+survives every other gate. This one is a grep, run with the rest:
+
+```
+! grep -n 'ParseInts\|ParseFloats' *.go     # functions that never existed
+! grep -n 'literally delegates' *_test.go   # the quoted path is parsed in-house
+go vet ./...                                # doc-link syntax
+```
+
+Four comments claimed things the code does not do: a package-doc paragraph
+advertising `ParseInts`/`ParseFloats`, a `Comma` note promising a rune
+delimiter falls back to `encoding/csv`, a `Reader` field note sending quoted
+records to `encoding/csv`, and a test comment saying the quoted path
+delegates there. Nothing delegates: `quotedRecord` parses in-house.
+
 ## Fuzz gates ([production plan task 2](plans/2026-08-13-simdcsv-production.md#task-2-fuzz-harness-as-a-gate))
 
 Three targets in `fuzz_test.go`, shipped and seeded. Smoke times below were
