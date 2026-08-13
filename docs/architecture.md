@@ -346,7 +346,7 @@ Task 0/Stage 0 (TDD).
    Excluded from the declared overlap; policy decision pending (plan Task
    0/Stage 0).
 
-This is why the package is "not a drop-in": the well-formed overlap is
+This is why the package is "not a drop-in": the declared overlap is
 identical, the malformed and error surfaces are not, and one well-formed
 input class (quoted CRLF) is documented as diverging with the policy still
 open.

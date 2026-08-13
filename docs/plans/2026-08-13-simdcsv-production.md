@@ -21,7 +21,7 @@ shipped with a caveat.
 **Tech Stack:** Go 1.25+, `github.com/sebishogun/simd` (IndexAll/IndexByte/
 CountByte), `encoding/csv` as differential oracle (declared overlap only —
 the overlap excludes CRLF-normalization-sensitive quoted data until Task 0
-decides, `go test`/`-race`/`vet`, `go test -c` + `go tool objdump` for
+decides), `go test`/`-race`/`vet`, `go test -c` + `go tool objdump` for
 disassembly, `perf stat -e instructions:u,cycles:u` for sub-floor changes,
 fuzz (Go native), Git.
 
