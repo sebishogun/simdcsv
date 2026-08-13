@@ -12,9 +12,10 @@ every delimiter in a quote-free record with one vector scan
 ([`simd.IndexAll`]) and returns fields as `[]byte` subslices instead of copies.
 Records containing a quote are parsed by a careful in-house path. No cgo.
 
-The repository is one package: `simdcsv.go` (~430 lines), `simdcsv_test.go`,
-`README.md`, and `docs/`. Nothing else exists; there are no build files,
-workflows, or assets.
+The repository is one package plus its module and docs: `simdcsv.go`
+(~430 lines), `simdcsv_test.go`, `go.mod`/`go.sum`, `LICENSE`, `README.md`,
+and `docs/`. There is no CI, no Makefile, no assets, and no build machinery
+beyond the Go toolchain.
 
 ## Boundary (source-backed, `simdcsv.go`)
 
@@ -58,10 +59,10 @@ and may change freely.
 
 - Latest tagged and published release: **v0.1.0** (commit `5da3d42`), built
   against `simd v1.2.0`, `go 1.25.0`.
-- `main` (`be2b26c`): `simd v1.20.0`, not tagged. The API is pre-1.0 and may
-  change.
-- `docs/v120-documentation` (`d44455f`): documentation of contracts; this
-  branch carries the docs and nothing else.
+- `main` (`be2b26c`, at the time of writing): `simd v1.20.0`, not tagged. The
+  API is pre-1.0 and may change.
+- `docs/v120-documentation`: documentation-only branch; it began with `d44455f`
+  ("docs: document simdcsv contracts") and carries docs and nothing else.
 
 ## Read order
 
@@ -95,7 +96,8 @@ behavior and record what actually happens.
 - `ReuseRecord=true`: consume a record before the next `Read`; do not retain
   its `Record` or `Fields()` value. `ReadAll` under `ReuseRecord=true` returns
   the final record for every entry (this is documented behavior and diverges
-  from Go 1.25+ `encoding/csv.ReadAll`, which copies).
+  from Go 1.25+ `encoding/csv.ReadAll`, which allocates each record freshly,
+  independent of `ReuseRecord`).
 - Records outlive the reader: under `ReuseRecord=false` every record is
   independent; even under `ReuseRecord=true` the input buffer and unescape
   buffers are not overwritten (only the outer slice headers are), but that is
@@ -103,10 +105,10 @@ behavior and record what actually happens.
 
 ## encoding/csv compatibility
 
-Identical on the well-formed overlap: quoted delimiters, embedded newlines,
-doubled quotes, blank-line skipping, CRLF and trailing-CR-at-EOF stripping,
-empty fields, field-count checks, and the record-with-error shape of `Read`.
-Verified by the differential tests and by probes against Go 1.26.5
+Identical on the declared overlap: quoted delimiters, embedded `\n` newlines,
+doubled quotes, blank-line skipping, CRLF line endings and trailing-CR-at-EOF
+stripping, empty fields, field-count checks, and the record-with-error shape
+of `Read`. Verified by the differential tests and by probes against Go 1.26.5
 (`encoding/csv`).
 
 Divergences (all empirical, see `docs/architecture.md` §12 for the table):
@@ -114,15 +116,23 @@ Divergences (all empirical, see `docs/architecture.md` §12 for the table):
 - malformed quotes are accepted with this package's own splits (`a"b`,
   `"a"b,c`, unclosed quotes, bare `"`, `"""` all parse; stdlib errors on all);
 - error text differs and there is no `*csv.ParseError`;
-- stdlib rejects `Comma` in `{'\n', '\r', '"'}`; simdcsv accepts any byte;
+- **quoted-field CRLF normalization:** `\r\n` inside a quoted field is
+  preserved here but normalized to `\n` by `encoding/csv`. This is a
+  well-formed divergence; the declared overlap excludes CRLF-normalization-
+  sensitive quoted data until a policy decision, and the differential corpus
+  currently has no such case (verification gap, Task 0/Stage 0 in the plan);
+- stdlib rejects `Comma` equal to `0`, `'\r'`, `'\n'`, `'"'`, `utf8.RuneError`
+  (or any non-UTF-8 rune), and equal to its `Comment` field when configured;
+  simdcsv accepts any byte;
 - stdlib `ReadAll` returns `nil, err` on the first error; simdcsv returns the
   partial records;
-- stdlib `ReadAll` with `ReuseRecord` copies each record; simdcsv's entries
-  all alias the last one.
+- stdlib `ReadAll` with `ReuseRecord` allocates each record freshly; simdcsv's
+  entries all alias the last one.
 
 Differential tests against `encoding/csv` may only run within the declared
-overlap (well-formed input). Malformed-input behavior is a documented contract
-of its own, tested by its own cases, not compared to stdlib.
+overlap (well-formed input excluding CRLF-normalization-sensitive quoted
+data). Malformed-input behavior is a documented contract of its own, tested
+by its own cases, not compared to stdlib.
 
 ## Concurrency
 

@@ -19,10 +19,11 @@ its bar is deleted and the measurement recorded in `docs/wrong.md` — never
 shipped with a caveat.
 
 **Tech Stack:** Go 1.25+, `github.com/sebishogun/simd` (IndexAll/IndexByte/
-CountByte), `encoding/csv` as differential oracle (declared overlap only),
-`go test`/`-race`/`vet`, `go test -c` + `go tool objdump` for disassembly,
-`perf stat -e instructions:u,cycles:u` for sub-floor changes, fuzz (Go
-native), Git.
+CountByte), `encoding/csv` as differential oracle (declared overlap only —
+the overlap excludes CRLF-normalization-sensitive quoted data until Task 0
+decides, `go test`/`-race`/`vet`, `go test -c` + `go tool objdump` for
+disassembly, `perf stat -e instructions:u,cycles:u` for sub-floor changes,
+fuzz (Go native), Git.
 
 **Standing rules for every task:**
 
@@ -37,9 +38,56 @@ native), Git.
   completely; the measurement and the reason land in `docs/wrong.md` as a
   new entry with its source. A finding that cost a measurement belongs there
   whether or not code changed.
-- Documentation changes are `.md` only; Go changes only inside their own
-  tasks (A3, B, C are the only tasks that may touch Go).
+- Documentation changes are `.md` only; Go changes happen only inside their
+  owning tasks (Tasks 0-6; Task 7 is release gates only).
 - `docs/wrong.md` holds only sourced measurements.
+
+---
+
+### Task 0 (Stage 0): Quoted-field CRLF normalization policy and corpus case
+
+Closes the current verification gap recorded in `docs/verification.md`: the
+differential corpus contains no quoted-field CRLF case, and the declared
+overlap excludes CRLF-normalization-sensitive quoted data until this task
+decides.
+
+**Files:**
+- Modify: `simdcsv_test.go` (one differential case + one contract case)
+- Modify: `docs/architecture.md` (§12 divergence 6 gains the decision)
+- Modify: `docs/verification.md` (gap closed; overlap definition updated)
+- Modify: `docs/roadmap.md`
+
+**Step 1 (TDD).** Add the differential case `"a\r\nb",c\r\n` to
+`TestMatchesStdlib` (or its own test): with the current parser this fails —
+simdcsv preserves `\r\n` (`["a\r\nb" "c"]`), `encoding/csv` normalizes to
+`\n` (`["a\nb" "c"]`), both probe-verified against Go 1.26.5. Watch it fail:
+that failure is the recorded gap, made concrete.
+
+**Step 2 — Decide the policy.** Two options, decided with the design's
+evidence bar:
+
+- **Preserve** (current behavior): `\r\n` inside a quoted field stays as
+  data. Keep the divergence; document it in architecture.md §12 divergence
+  6 as the decision; the overlap stays excluding this class forever; the
+  differential case from Step 1 becomes a contract case pinned to the
+  preserve behavior, and `FuzzOverlap` (Task 2) must keep `\r\n` out of
+  quoted fields.
+- **Normalize** (stdlib parity): strip the `\r` before a `\n` inside quoted
+  fields. This is a behavior change in `quotedRecord`/`recordEnd`; the Step
+  1 case becomes a differential parity case, the overlap widens to include
+  the class, and a fuzz generator (Task 2) may then emit it.
+
+**Step 3.** Whatever the decision, update the declared-overlap definition
+in `docs/verification.md`, `docs/architecture.md` §12, and the agent files'
+compatibility sections so all of them name the same rule.
+
+**Definition of Done:** the case is in the suite; the decision is written
+with its rationale; every "excludes CRLF-normalization-sensitive quoted
+data" sentence in the docs names this task as the decider and reflects its
+outcome; all gates green.
+
+**Delete-and-record:** n/a (a policy decision; if the decision is later
+reversed, the reversal and its reason are recorded in wrong.md).
 
 ---
 
@@ -56,7 +104,8 @@ current behavior for every row of architecture.md §7 (probe-verified rows:
 trailing CR at EOF, no trailing newline), both `ReuseRecord` values. Run
 them: they pass against the current parser by construction. These are
 characterization tests; they make the accident visible, they do not bless
-it.
+it. (The quoted-field CRLF row is not here: it is a well-formed case in §12
+divergence 6, owned by Task 0.)
 
 **Step 2 — Decide each row.** For each row, decide: **accept-as-is**
 (quote inside unquoted field, truncated record, unclosed quote — harmless,
@@ -91,8 +140,10 @@ reconsidered later, the reversal is recorded in wrong.md with the reason).
 
 **Step 1 (TDD):** `FuzzOverlap` — differential fuzz vs `encoding/csv`
 within the declared overlap. Generator: well-formed atoms only (plain,
-quoted, doubled-quote, embedded-newline fields; delimiters from
-`{',', ';'}`; CRLF/blank-line mix; both `ReuseRecord` values; sizes 0-64
+quoted, doubled-quote, embedded-`\n`-newline fields; delimiters from
+`{',', ';'}`; CRLF line endings at record level — never `\r\n` inside
+quoted fields, per the overlap exclusion unless Task 0 decided normalize;
+both `ReuseRecord` values; sizes 0-64
 rows, 1-8 cols). Assert: error-parity and `Strings()` equality exactly as
 `checkAgainstStdlib`. Seed corpus: every `TestMatchesStdlib` input. Run
 5 seconds locally, then `-race` 2 seconds. **Any finding here is a bug and

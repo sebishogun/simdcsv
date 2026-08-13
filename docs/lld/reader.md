@@ -1,9 +1,12 @@
 # simdcsv reader — low-level design
 
 Function-by-function design of the reader in `simdcsv.go`. All line numbers
-refer to the current `main` (commit `be2b26c` plus the docs branch). Every
-behavioral claim is either derived from the code or probe-verified against
-`encoding/csv` (Go 1.26.5, amd64, 2026-08-13); probe-backed claims say so.
+refer to the `main` branch as of the 2026-08-13 docs session — the docs
+branch carries no Go changes, so `simdcsv.go` here is identical to `main` at
+that point; verify line numbers against the tree before relying on them.
+Every behavioral claim is either derived from the code or probe-verified
+against `encoding/csv` (Go 1.26.5, amd64, 2026-08-13); probe-backed claims
+say so.
 
 The reader is a stateful byte-offset walker over a fully-buffered input.
 State (`Reader` struct, simdcsv.go:77-113) and its lifecycle are in
@@ -150,8 +153,11 @@ return Record{own(quotedRecord(rec))}, nil
 
 - **Never errors**; the `error` in the signature is vestigial (architecture.md
   §11 — the `Read` branch that handles it is unreachable).
-- Line ending strip is on *both* characters so `\r\n` is removed; a `\r`
-  inside a quoted field survives (data).
+- **Line ending strip is on *both* characters** so `\r\n` is removed; a `\r`
+  inside a quoted field survives as data. That survival is the mechanism of
+  the well-formed divergence in architecture.md §12 divergence 6: simdcsv
+  preserves `\r\n` inside quoted fields, `encoding/csv` normalizes it to
+  `\n`. Policy decision is plan Task 0/Stage 0.
 
 ## `own(fields [][]byte) [][]byte` — simdcsv.go:347
 

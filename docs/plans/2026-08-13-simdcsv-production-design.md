@@ -17,7 +17,7 @@ and an option that misses its bar is deleted and recorded in
 ## Current state (the snapshot the plan works from)
 
 - Public surface: `NewReader`, `Reader.Comma` (byte) / `FieldsPerRecord` /
-  `ReuseRecord`, `Read`, `ReadAll`, `Record.{Len,Field,Fields,String}`.
+  `ReuseRecord`, `Read`, `ReadAll`, `Record.{Len,Field,Fields,Strings}`.
   Pre-1.0. v0.1.0 tagged (`simd v1.2.0`); `main` on `simd v1.20.0`, untagged.
 - Whole input buffered on first `Read`; fields alias it; doubled-quote
   fields are fresh copies (double-copied under `ReuseRecord=false`, an
@@ -27,6 +27,11 @@ and an option that misses its bar is deleted and recorded in
 - Malformed input: never errors; each class parses with its own splits
   (architecture.md §7, probe-verified). `encoding/csv` divergences pinned in
   architecture.md §12.
+- One well-formed divergence with the policy still open: `\r\n` inside a
+  quoted field is preserved here, normalized to `\n` by `encoding/csv`
+  (architecture.md §12 divergence 6). The declared differential overlap
+  excludes CRLF-normalization-sensitive quoted data, and the corpus has no
+  such case — a recorded verification gap, closed by Task 0/Stage 0.
 - Known source-doc defects: `ParseInts`/`ParseFloats` ghosts, rune-fallback
   cross-reference, two "delegates to encoding/csv" comments (architecture.md
   §13).
@@ -54,7 +59,11 @@ option is evaluated against this model, not around it:
 
 The parser's behavior on malformed input is currently an accident of the
 state machines, documented only after the fact in architecture.md §7. The
-plan turns each row into a *decision* with a contract test:
+plan turns each row into a *decision* with a contract test. Task 0/Stage 0
+runs first within this workstream: the quoted-field CRLF normalization is
+well-formed, so it is a *policy* decision (preserve — the current behavior —
+or normalize for parity), pinned by a differential-style case that the
+corpus currently lacks.
 
 - **Accept-as-is** (quote inside an unquoted field, truncated record at
   EOF, unclosed quote running to end of record) — harmless to fast path,
@@ -98,7 +107,9 @@ surprises. Decisions land in architecture.md §12.
 ## Test strategy
 
 - Differential tests stay within the declared overlap (well-formed input
-  only); malformed classes are pinned by their own contract tests.
+  only, excluding CRLF-normalization-sensitive quoted data until Task 0
+  decides the policy); malformed classes are pinned by their own contract
+  tests.
 - Fuzz: overlap differential fuzz; arbitrary-bytes panic/hang fuzz; contract
   fuzz over the §7 generators. Details in `docs/verification.md`.
 - `TestFastPathRuns`-style aliasing assertions accompany any change that

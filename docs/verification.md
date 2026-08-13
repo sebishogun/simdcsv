@@ -33,23 +33,34 @@ Documentation work adds:
 ## Differential testing within the declared overlap
 
 `simdcsv_test.go` compares this package against `encoding/csv` on the same
-bytes — but only within the **declared overlap**: well-formed input.
+bytes — but only within the **declared overlap**: well-formed input
+**excluding CRLF-normalization-sensitive quoted data**. A quoted field
+containing `\r\n` parses differently in the two packages (simdcsv preserves
+it, `encoding/csv` normalizes it to `\n` — architecture.md §12 divergence 6),
+so such inputs are not parity material until a policy decision.
 `checkAgainstStdlib` (simdcsv_test.go:16) asserts error-parity and
 field-parity (`Strings()` equality). The corpus:
 
 - `TestMatchesStdlib` (simdcsv_test.go:46) — hand-written cases: empty
-  input, no trailing newline, blank lines, CRLF, empty fields, single
-  column, quoted delimiters, embedded newlines, doubled quotes, mixed
-  plain/quoted rows, 100-row stress.
+  input, no trailing newline, blank lines, CRLF line endings, empty fields,
+  single column, quoted delimiters, embedded `\n` newlines, doubled quotes,
+  mixed plain/quoted rows, 100-row stress.
 - `TestMatchesStdlibRandom` (simdcsv_test.go:72) — 400 seeded-random rows
-  (`rand.NewPCG(1, 2)`) over atoms including quoted and multi-line fields.
-  Fixed seed: the corpus is reproducible and does not rot.
+  (`rand.NewPCG(1, 2)`) over atoms including quoted and multi-line fields
+  (`\n` only inside quotes, never `\r\n`). Fixed seed: the corpus is
+  reproducible and does not rot.
 - `TestFastPathRuns` (simdcsv_test.go:93) — the fast path must actually run:
   a fast-path field must alias the reader's buffer (pointer-range check via
   `unsafe`, `aliases` at simdcsv_test.go:194). A suite where every test
   passes by delegation is not testing this package.
 - `TestFieldsPerRecord` — count learning, positive enforcement, `-1`
   ragged. `TestSemicolonDelimiter` — custom byte delimiter.
+
+**Current verification gap (recorded, pinned by plan Task 0/Stage 0):** the
+corpus contains no quoted-field CRLF case. Until the Task 0 policy decision
+and its TDD case land, the overlap definition above is what makes the
+existing suite sound — do not add a `\r\n`-inside-quotes differential case
+in the meantime, and do not claim parity on it.
 
 **The rule:** a differential test may only feed the overlap. Malformed
 inputs (`a"b`, `"a"b,c`, unclosed quotes) are *documented divergences*
@@ -62,9 +73,10 @@ random corpus must stay well-formed for the same reason.
 Targets, in order of value:
 
 1. **Differential fuzz within the overlap:** well-formed generators
-   (quoted/unquoted/doubled/embedded-newline atoms, random delimiters from
-   the allowed set, random CRLF/blank lines) compared to `encoding/csv`.
-   Failures here are real bugs.
+   (quoted/unquoted/doubled/embedded-`\n`-newline atoms, random delimiters
+   from the allowed set, CRLF line endings at record level — never `\r\n`
+   inside quoted fields, per the overlap exclusion) compared to
+   `encoding/csv`. Failures here are real bugs.
 2. **No-panic / no-hang fuzz over arbitrary bytes:** any input, any
    `Comma`, both `ReuseRecord` values, `Read` to EOF. The parser must
    terminate and never panic; malformed input may produce any record

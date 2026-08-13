@@ -54,7 +54,7 @@ have been partially consumed (verified by probe).
 
 ## 3. Record read state machine (fast path)
 
-`Read` (simdcsv.go:124):
+`Read` (simdcsv.go:129):
 
 ```
 buf == nil ? io.ReadAll → error or buf
@@ -163,9 +163,12 @@ record can produce is the field-count check in `Read`.
 - **Delimiter.** `Comma` is a byte and is used only in `split`
   (`IndexAll(line, Comma)`) and in `quotedRecord`'s unquoted-field scan. A
   record is never split on `\n` — `nextLine`/`recordEnd` handle line endings
-  first. There is no validation of `Comma`; `'\n'`, `'\r'`, or `'"'` are
-  accepted and produce odd but defined results (`encoding/csv` rejects all
-  three with "csv: invalid field or comment delimiter" — verified by probe).
+  first. There is no validation of `Comma`; `'\n'`, `'\r'`, `'"'` are
+  accepted and produce odd but defined results. (`encoding/csv` rejects, with
+  "csv: invalid field or comment delimiter", any `Comma` equal to `0`, `'"'`,
+  `'\r'`, `'\n'`, `utf8.RuneError` or a non-UTF-8 rune, and a `Comma` equal
+  to its `Comment` field when `Comment` is configured — csv/reader.go
+  `validDelim`. simdcsv has no `Comment` and validates nothing.)
 - **Quote detection.** One `IndexByte` per record decides fast vs slow. The
   cost of a quoted record is therefore the fast path's detection plus the
   full careful parse.
@@ -217,11 +220,16 @@ malformed parses, with its own splits. `encoding/csv` rejects most of it.
 | `"a,b` (EOF mid-quote) | `["a,b"]` — truncated quoted field accepted | error |
 | no trailing newline (`a,b`) | `["a" "b"]` | `["a" "b"]` — same |
 | trailing `\r` at EOF (`a,b\r`) | `["a" "b"]` | `["a" "b"]` — same |
-| `\r\n` inside a quoted field | `\r\n` preserved as data | same |
 
 Truncated records (EOF without newline) are legal on both paths; the final
 `\r` before EOF is stripped by both. Blank lines (`""`, `"\r\n"`) are skipped
 by both. A record of `","` is a record of two empty fields in both.
+
+The one *well-formed* input class that does **not** agree is `\r\n` inside a
+quoted field: simdcsv preserves the `\r\n`, `encoding/csv` normalizes it to
+`\n` (probe-verified with exact bytes). It is a divergence, not a malformed
+case — it lives in §12, is excluded from the declared overlap, and is pinned
+by plan Task 0/Stage 0.
 
 ## 8. Limits and resource model
 
@@ -294,21 +302,29 @@ The complete error surface:
 
 ## 12. Compatibility with `encoding/csv`
 
-### Identical on the declared overlap (well-formed input)
+### Identical on the declared overlap (well-formed input, excluding
+CRLF-normalization-sensitive quoted data)
 
 Verified by the differential tests in `simdcsv_test.go` (hand-written corpus
 plus 400 seeded-random rows, `TestMatchesStdlib`, `TestMatchesStdlibRandom`)
-and by probe: quoted delimiters, embedded newlines, doubled quotes, blank
-lines, CRLF, trailing `\r` at EOF, empty fields, no-trailing-newline files,
-field-count behavior (`FieldsPerRecord` 0/+/−), and the record-with-error
-shape of `Read`. The tests assert `(stdlib err != nil) == (simdcsv err !=
-nil)` and byte-equality of fields via `Strings()`.
+and by probe: quoted delimiters, embedded `\n` newlines, doubled quotes, blank
+lines, CRLF line endings, trailing `\r` at EOF, empty fields,
+no-trailing-newline files, field-count behavior (`FieldsPerRecord` 0/+/−), and
+the record-with-error shape of `Read`. The tests assert `(stdlib err != nil)
+== (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
+
+**Overlap exclusion.** A quoted field containing `\r\n` is well-formed but
+parses differently (§7 note): simdcsv preserves it, `encoding/csv` normalizes
+it to `\n`. The declared overlap therefore excludes CRLF-normalization-
+sensitive quoted data until a policy decision, and the differential corpus
+currently contains no such case — a recorded verification gap, pinned by plan
+Task 0/Stage 0 (TDD).
 
 ### Missing from `simdcsv` (present in `encoding/csv`)
 
 `Comment` (comment lines), `LazyQuotes`, `TrimLeadingSpace`, `FieldPos`,
 `InputOffset`, `TrailingComma` (deprecated in stdlib), rune `Comma`, and the
-`*csv.ParseError` type with `Err`/`Line`/`Column`/`StartLine`/`StartColumn`.
+`*csv.ParseError` type with `Err`/`Line`/`Column`/`StartLine`.
 `ReuseRecord` exists in both with different `ReadAll` consequences (§10).
 
 ### Divergent behavior (all probe-verified against Go 1.26.5)
@@ -317,16 +333,23 @@ nil)` and byte-equality of fields via `Strings()`.
    stdlib errors.
 2. Error values and text differ; no `ParseError`; stdlib's count error is
    `*csv.ParseError` with `ErrFieldCount`, this one is a plain error.
-3. `Comma` validation: stdlib rejects `'\n'`, `'\r'`, `'"'` ("csv: invalid
-   field or comment delimiter"); simdcsv accepts any byte. (`Comma = ';'`
-   works identically in both.)
+3. `Comma` validation: stdlib rejects `Comma` equal to `0`, `'"'`, `'\r'`,
+   `'\n'`, `utf8.RuneError` or any non-UTF-8 rune, and a `Comma` equal to its
+   `Comment` when configured ("csv: invalid field or comment delimiter");
+   simdcsv accepts any byte. (`Comma = ';'` works identically in both.)
 4. `ReadAll` error shape: simdcsv returns partial records; stdlib returns
    `nil`.
 5. `ReadAll` + `ReuseRecord`: simdcsv aliases everything to the last record;
-   stdlib copies.
+   stdlib allocates each record freshly, independent of `ReuseRecord`.
+6. Quoted-field CRLF normalization (well-formed, probe-verified with exact
+   bytes): `"a\r\nb",c` → simdcsv `["a\r\nb" "c"]`, stdlib `["a\nb" "c"]`.
+   Excluded from the declared overlap; policy decision pending (plan Task
+   0/Stage 0).
 
 This is why the package is "not a drop-in": the well-formed overlap is
-identical, the malformed and error surfaces are not.
+identical, the malformed and error surfaces are not, and one well-formed
+input class (quoted CRLF) is documented as diverging with the policy still
+open.
 
 ## 13. Known source-doc defects
 

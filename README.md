@@ -71,9 +71,16 @@ observe the same input buffer. For an input too large to buffer, use
 ## CSV compatibility
 
 The tested well-formed surface agrees with `encoding/csv` for comma-separated
-records, blank lines, CRLF, empty fields, quoted delimiters, embedded newlines,
-and doubled quotes. `Comma`, `FieldsPerRecord`, and `ReuseRecord` have analogous
-roles, but this is not a drop-in `encoding/csv.Reader`.
+records, blank lines, CRLF line endings, empty fields, quoted delimiters,
+embedded `\n` newlines, and doubled quotes. `Comma`, `FieldsPerRecord`, and
+`ReuseRecord` have analogous roles, but this is not a drop-in
+`encoding/csv.Reader`.
+
+One well-formed exception: `\r\n` inside a quoted field is preserved here,
+while `encoding/csv` normalizes it to `\n`. The differential tests exclude
+CRLF-normalization-sensitive quoted data until a policy decision
+([docs/verification.md](docs/verification.md)); pinning it is Task 0/Stage 0
+of the production plan ([docs/plans/2026-08-13-simdcsv-production.md](docs/plans/2026-08-13-simdcsv-production.md)).
 
 This package does not implement `Comment`, `LazyQuotes`, `TrimLeadingSpace`,
 `FieldPos`, `InputOffset`, rune delimiters, or standard-library `ParseError`

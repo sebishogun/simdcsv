@@ -5,10 +5,11 @@ boundary, the facts, and the gates.
 
 ## The repository
 
-One Go package (`simdcsv.go`, `simdcsv_test.go`), a README, and `docs/`. A
-whole-buffer CSV reader: one vector scan per unquoted record via
-`github.com/sebishogun/simd`, fields returned as `[]byte` subslices, quoted
-records parsed in-house. No cgo. No build files, workflows, or assets.
+One Go package (`simdcsv.go`, `simdcsv_test.go`) with module files
+(`go.mod`/`go.sum`), `LICENSE`, a README, and `docs/`. A whole-buffer CSV
+reader: one vector scan per unquoted record via `github.com/sebishogun/simd`,
+fields returned as `[]byte` subslices, quoted records parsed in-house. No
+cgo, no CI, no Makefile, no assets.
 
 ## Source of truth
 
@@ -33,6 +34,12 @@ these docs are probe-backed against Go 1.26.5 unless a source line is cited.
 independent; `true` reuses the outer slice — consume before the next `Read`.
 The whole input is read on the first `Read` and retained; fields alias it
 unless unescaped (doubled quotes), in which case they are fresh copies.
+
+One well-formed divergence to keep straight: `\r\n` inside a quoted field is
+preserved here, while `encoding/csv` normalizes it to `\n`. The declared
+differential overlap excludes CRLF-normalization-sensitive quoted data, the
+corpus currently has no such case (verification gap), and pinning the policy
+is Task 0/Stage 0 of the production plan — never claim parity there.
 
 ## Non-goals — do not drift into these
 
@@ -62,8 +69,8 @@ README → `docs/architecture.md` → `docs/lld/reader.md` → `docs/wrong.md` �
 Not safe for concurrent use, no locks, one Reader per goroutine. No reset:
 EOF is permanent; after a field-count error the position has already advanced
 past the failing record. `ReadAll` under `ReuseRecord=true` returns the last
-record for every entry (documented; stdlib `ReadAll` copies — do not claim
-parity).
+record for every entry (documented; stdlib `ReadAll` allocates each record
+freshly, independent of `ReuseRecord` — do not claim parity).
 
 ## Performance work
 
