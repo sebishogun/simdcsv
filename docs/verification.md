@@ -68,30 +68,45 @@ inputs (`a"b`, `"a"b,c`, unclosed quotes) are *documented divergences*
 their own in the production plan, never differential ones. The existing
 random corpus must stay well-formed for the same reason.
 
-## Fuzz plan ([production plan task 2](plans/2026-08-13-simdcsv-production.md#task-2-fuzz-harness-as-a-gate))
+## Fuzz gates ([production plan task 2](plans/2026-08-13-simdcsv-production.md#task-2-fuzz-harness-as-a-gate))
 
-Targets, in order of value:
+Three targets in `fuzz_test.go`, shipped and seeded. Smoke times below were
+run locally, not assumed:
 
-1. **Differential fuzz within the overlap:** well-formed generators
-   (quoted/unquoted/doubled/embedded-`\n`-newline atoms, random delimiters
-   from the allowed set, CRLF line endings at record level — never `\r\n`
-   inside quoted fields, per the overlap exclusion) compared to
-   `encoding/csv`. Failures here are real bugs.
-2. **No-panic / no-hang fuzz over arbitrary bytes:** any input, any
-   `Comma`, both `ReuseRecord` values, `Read` to EOF. The parser must
-   terminate and never panic; malformed input may produce any record
-   content (documented), never a crash.
-3. **Contract fuzz for the documented malformed classes:** generators
-   targeting the §7 table rows assert the pinned behavior (e.g.
-   `"a"b,c` → `["a", "", "c"]`), so the decisions stay pinned when the
-   parser changes.
+```
+go test -run '^$' -fuzz FuzzOverlap           -fuzztime 25s .   # 14.4M execs
+go test -run '^$' -fuzz FuzzNoPanic           -fuzztime 12s .   #  4.1M execs
+go test -run '^$' -fuzz FuzzContractMalformed -fuzztime 12s .   #  0.9M execs
+go test -race -run '^$' -fuzz FuzzOverlap     -fuzztime 8s  .
+```
+
+1. **`FuzzOverlap` — differential within the overlap.** The generator builds
+   well-formed documents out of atoms (quoted, unquoted, doubled-quote,
+   embedded-LF, delimiters from `{',', ';'}`, CRLF at record level) rather
+   than mutating raw bytes, because raw bytes leave the overlap immediately
+   and the differential then proves nothing. It checks its own expectation
+   against `encoding/csv` as a second opinion. A failure here is a bug.
+2. **`FuzzNoPanic` — arbitrary bytes.** Any input, any `Comma`, both
+   `ReuseRecord` values, read to EOF under a ten-second per-input deadline.
+   The parser must terminate and must not panic; malformed input may produce
+   any record content, which is contract rather than bug.
+3. **`FuzzContractMalformed` — the malformed decisions stay pinned.**
+   Whatever junk follows a closing quote, every data byte of the input must
+   come back out in some field (architecture.md §7).
+
+**A finding, on the first run.** `FuzzOverlap` failed its own seed corpus
+immediately: a one-column record holding an unquoted empty field renders as
+a blank line, and a blank line is skipped by both parsers, so the document
+parsed to fewer records than the generator built. That is the generator's
+fault, not the parser's — the plan's rule for exactly this case — so the
+generator now quotes empty atoms, and the failing input stays committed as
+`testdata/fuzz/FuzzOverlap/fdfe2dc8bbeeb576` so a fresh clone replays it.
 
 Seed corpus: the `TestMatchesStdlib` inputs plus the §7 table rows.
-Budgets: short per-input timeouts (no hang on pathological records),
-`-race` on a reduced corpus, a fixed random seed recorded with the harness.
 Outcome policy: a differential failure is a bug and blocks; a divergence
 outside the overlap is a plan decision ([roadmap workstream 1](roadmap.md#1-harden-malformed-input-safety-and-contracts)), not a bug —
-recorded, never "fixed" silently.
+recorded, never "fixed" silently. A generator that produces input outside the
+overlap is fixed in the generator, and the input is kept as a seed.
 
 ## Benchmarks
 
