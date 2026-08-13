@@ -464,7 +464,23 @@ func (r *Reader) checkCount(n int) error {
 }
 
 // ReadAll reads every remaining record.
+//
+// ReuseRecord is ignored here, and has to be. It makes [Reader.Read] hand back
+// memory the next call overwrites, which is sound in a loop that consumes each
+// record before asking for the next one -- and unsound the moment every record
+// is kept, which is what ReadAll does. Honouring it returned a slice whose
+// entries all aliased the last record: three records in, the same record three
+// times out, with no error to say so. encoding/csv copies here for the same
+// reason.
+//
+// Unlike encoding/csv, the records parsed before an error are returned with
+// it rather than discarded: this package's posture is to hand back what the
+// input contained, and the error says where it stopped.
 func (r *Reader) ReadAll() ([]Record, error) {
+	reuse := r.ReuseRecord
+	r.ReuseRecord = false
+	defer func() { r.ReuseRecord = reuse }()
+
 	var out []Record
 	for {
 		rec, err := r.Read()

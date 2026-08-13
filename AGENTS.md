@@ -95,10 +95,10 @@ behavior and record what actually happens.
   field is copied a second time by `own` (observed; see `docs/architecture.md`
   §9) — do not present it as allocation-free.
 - `ReuseRecord=true`: consume a record before the next `Read`; do not retain
-  its `Record` or `Fields()` value. `ReadAll` under `ReuseRecord=true` returns
-  the final record for every entry (this is documented behavior and diverges
-  from Go 1.25+ `encoding/csv.ReadAll`, which allocates each record freshly,
-  independent of `ReuseRecord`).
+  its `Record` or `Fields()` value. `ReadAll` ignores the flag and returns
+  independent records, matching `encoding/csv`: it keeps every record it
+  returns, so reuse there produced a slice whose entries all aliased the last
+  record parsed.
 - Records outlive the reader: under `ReuseRecord=false` every record is
   independent; even under `ReuseRecord=true` the input buffer and unescape
   buffers are not overwritten (only the outer slice headers are), but that is

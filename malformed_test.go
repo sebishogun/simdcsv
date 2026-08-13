@@ -220,3 +220,59 @@ func TestFastPathSurvivesMalformedNeighbours(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// ReadAll keeps every record it returns, so ReuseRecord cannot apply to it:
+// honouring the flag handed back a slice whose entries all aliased the last
+// record parsed. Three records in, the same record three times out, and no
+// error to say so.
+func TestReadAllIgnoresReuseRecord(t *testing.T) {
+	const in = "a,1\nb,2\nc,3\n"
+	want := [][]string{{"a", "1"}, {"b", "2"}, {"c", "3"}}
+	for _, reuse := range []bool{false, true} {
+		r := NewReader(strings.NewReader(in))
+		r.ReuseRecord = reuse
+		got, err := r.ReadAll()
+		if err != nil {
+			t.Fatalf("reuse=%v: %v", reuse, err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("reuse=%v: %d records, want %d", reuse, len(got), len(want))
+		}
+		for i := range got {
+			gs := got[i].Strings()
+			for j := range want[i] {
+				if gs[j] != want[i][j] {
+					t.Fatalf("reuse=%v record %d: %q, want %q", reuse, i, gs, want[i])
+				}
+			}
+		}
+		// The caller's setting survives the call.
+		if r.ReuseRecord != reuse {
+			t.Fatalf("ReadAll left ReuseRecord as %v, caller set %v", r.ReuseRecord, reuse)
+		}
+	}
+}
+
+// Read still reuses when asked: ReadAll's exception must not disable the flag
+// for the streaming path, which is the whole reason it exists.
+func TestReadStillReusesRecords(t *testing.T) {
+	r := NewReader(strings.NewReader("a,1\nb,2\n"))
+	r.ReuseRecord = true
+	first, err := r.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(first.Field(0)); got != "a" {
+		t.Fatalf("first record reads %q", got)
+	}
+	if _, err := r.Read(); err != nil {
+		t.Fatal(err)
+	}
+	// The point of the flag: the first Record's own slice was handed to the
+	// second record, so reading it now gives the second record's field. The
+	// field header has to be read after the second Read to see it -- taking a
+	// copy of it beforehand would keep pointing at the old bytes.
+	if got := string(first.Field(0)); got != "b" {
+		t.Fatalf("first record reads %q after a second Read; ReuseRecord stopped reusing", got)
+	}
+}

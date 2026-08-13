@@ -95,3 +95,44 @@ documented contract, in `docs/architecture.md` §7 and §12. Future
 evaluations that fail their bars (roadmap workstreams 2-3) get entries here
 with their measurements, per the delete-and-record rule in
 `docs/plans/2026-08-13-simdcsv-production.md`.
+
+## `ReadAll` under `ReuseRecord` returned the same record N times
+
+**Believed.** `ReuseRecord` is a documented performance flag: the caller
+opts in, and the documentation says not to retain a record past the next
+`Read`. Under `ReadAll` it was described as returning the final record for
+every entry — written down, so treated as understood.
+
+**Actually.** That is not a performance trade a caller can opt into; it is
+silent data loss with no error attached. Three records in, the same record
+three times out:
+
+    in:  "a,1\nb,2\nc,3\n"
+    got: [["c" "3"] ["c" "3"] ["c" "3"]]
+    encoding/csv: [["a" "1"] ["b" "2"] ["c" "3"]]
+
+`ReuseRecord` is sound in the loop it was designed for — consume each
+record before asking for the next — and unsound the moment every record is
+kept, which is precisely what `ReadAll` does. The flag and the method
+cannot both be honoured.
+
+**How it surfaced.** Task 6 of the production plan lists the `ReadAll`
+divergences as options to decide. Probing the two before deciding showed
+this one is not a divergence to document but a defect to fix.
+
+**Source.** `simdcsv.go` `ReadAll`; `encoding/csv` copies for the same
+reason.
+
+**Consequence.** `ReadAll` clears `ReuseRecord` for its own loop and
+restores the caller's setting on return, so it yields independent records
+whatever the flag says, and `Read` still reuses when asked. Both are
+pinned: one test reads three records under both settings, another checks
+that a `Record` handed out by `Read` is overwritten by the next `Read`,
+reading the field header after the second call rather than before, since a
+copy taken beforehand still points at the old bytes and would pass either
+way.
+
+The other `ReadAll` divergence — records parsed before an error are
+returned with it rather than discarded — is kept. It hands back what the
+input contained and the error says where it stopped, which is this
+package's posture; it is documented, not silent.

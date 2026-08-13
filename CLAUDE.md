@@ -68,9 +68,10 @@ README → `docs/architecture.md` → `docs/lld/reader.md` → `docs/verificatio
 
 Not safe for concurrent use, no locks, one Reader per goroutine. No reset:
 EOF is permanent; after a field-count error the position has already advanced
-past the failing record. `ReadAll` under `ReuseRecord=true` returns the last
-record for every entry (documented; stdlib `ReadAll` allocates each record
-freshly, independent of `ReuseRecord` — do not claim parity).
+past the failing record. `ReadAll` ignores `ReuseRecord` and returns independent records, as
+`encoding/csv` does. It used to honour the flag and hand back a slice whose
+entries all aliased the last record parsed — three records in, the same record
+three times out, with no error to say so.
 
 ## Performance work
 
