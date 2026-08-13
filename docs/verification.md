@@ -69,7 +69,7 @@ inputs (`a"b`, `"a"b,c`, unclosed quotes) are *documented divergences*
 their own in the production plan, never differential ones. The existing
 random corpus must stay well-formed for the same reason.
 
-## Fuzz plan (production plan task 2)
+## Fuzz plan ([production plan task 2](plans/2026-08-13-simdcsv-production.md#task-2-fuzz-harness-as-a-gate))
 
 Targets, in order of value:
 

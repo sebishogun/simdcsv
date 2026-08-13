@@ -310,17 +310,19 @@ plus 400 seeded-random inputs, `TestMatchesStdlib`, `TestMatchesStdlibRandom`)
 and by probe: quoted delimiters, embedded `\n` newlines, doubled quotes, blank
 lines, CRLF line endings, trailing `\r` at EOF, empty fields,
 no-trailing-newline files, and the record-with-error shape of `Read`.
-Field-count behavior (`FieldsPerRecord` 0/+/−) is covered by the dedicated
-`TestFieldsPerRecord` and by the source (`checkCount`) with probe
-confirmation — not by the differential corpus. The tests assert `(stdlib err
+Field-count behavior: `TestFieldsPerRecord` pins `FieldsPerRecord == 0`
+(first-record learning, then learned-count enforcement) and `-1` (ragged).
+Explicit positive `FieldsPerRecord` behavior is not in the test suite — it
+comes from `checkCount` (source) and probe confirmation of the error path,
+not from the differential corpus. The tests assert `(stdlib err
 != nil) == (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
 
 **Overlap exclusion.** A quoted field containing `\r\n` is well-formed but
 parses differently (§7 note): simdcsv preserves it, `encoding/csv` normalizes
 it to `\n`. The declared overlap therefore excludes CRLF-normalization-
 sensitive quoted data until a policy decision, and the differential corpus
-currently contains no such case — a recorded verification gap, pinned by plan
-Task 0/Stage 0 (TDD).
+currently contains no such case — a recorded verification gap, pinned by
+[plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case) (TDD).
 
 ### Missing from `simdcsv` (present in `encoding/csv`)
 
@@ -345,8 +347,8 @@ Task 0/Stage 0 (TDD).
    stdlib allocates each record freshly, independent of `ReuseRecord`.
 6. Quoted-field CRLF normalization (well-formed, probe-verified with exact
    bytes): `"a\r\nb",c` → simdcsv `["a\r\nb" "c"]`, stdlib `["a\nb" "c"]`.
-   Excluded from the declared overlap; policy decision pending (plan Task
-   0/Stage 0).
+   Excluded from the declared overlap; policy decision pending
+   ([plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case)).
 
 This is why the package is "not a drop-in": the declared overlap is
 identical, the malformed and error surfaces are not, and one well-formed
