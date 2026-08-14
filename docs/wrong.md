@@ -136,3 +136,63 @@ The other `ReadAll` divergence — records parsed before an error are
 returned with it rather than discarded — is kept. It hands back what the
 input contained and the error says where it stopped, which is this
 package's posture; it is documented, not silent.
+
+## Bounded reading: all three bars met, after one line moved
+
+**The evaluation.** The whole-buffer path reads the input with
+`io.ReadAll`, so peak memory is the file, and inputs larger than memory
+are the one thing `encoding/csv` can do that this cannot. Plan task 4
+asked for a chunked prototype with three bars: peak memory independent of
+input size, unquoted throughput within 1.2x of whole-buffer, and the
+fast-path allocation profile unchanged.
+
+**The first prototype missed the throughput bar by a mile**: 3.37x slower
+on unquoted 4-column, 2.55x on quoted 4-column. Not the parsing -- the
+compaction. It dropped delivered bytes before every record, which is a
+64 KiB move per 20-byte record. Compaction only has to happen before the
+buffer grows, so it moved into `fill`, and the same code became:
+
+    shape              whole      bounded    ratio
+    unquoted 4-col    1.62 ms     1.60 ms    0.99x
+    unquoted 16-col   4.07 ms     3.63 ms    0.89x
+    quoted 4-col      2.54 ms     2.18 ms    0.86x
+    quoted 16-col     6.91 ms     6.71 ms    0.97x
+
+Bounded is level or faster, and the reason is the memory bound itself: a
+64 KiB window stays in cache where a 4 MB buffer streams through it. Runs
+on a loaded machine put the ratio between 0.86x and 1.05x, so the bar is
+met in either direction.
+
+**Memory**, 85 MB input, 2.5M records:
+
+    bounded:  buffer cap     64 KB,  heap grew  55 MB
+    whole:    buffer cap 87,896 KB,  heap grew 225 MB
+
+The buffer is flat at the chunk size across a 2000x range of input sizes.
+The 55 MB the bounded path still grows is the retained records themselves,
+not the buffer.
+
+**Allocations**: 20,011 against 20,028 per run, and bounded allocates
+fewer *bytes* -- 2.21 MB against 3.28 MB -- because it never allocates the
+whole-file buffer.
+
+**What it costs, and it is not nothing.** Records cannot outlive the next
+`Read`. The whole-buffer path returns fields aliasing a buffer that never
+moves; a bounded buffer is compacted and refilled under them. So bounded
+records carry `encoding/csv`'s contract and a caller who keeps one copies
+it. That is what bounded memory costs, and it is pinned by a test rather
+than left to be discovered.
+
+**A defect the prototype found in the shipped code.** Deciding whether a
+buffer holds a complete record cannot be done by looking for a trailing
+newline: that newline may be inside a quoted field. `recordEnd` returned
+`len(b)` both when it ran out of buffer and when the terminator was the
+final byte, so the two were indistinguishable from the offset alone. It
+now reports which, in one walk -- a second implementation of the
+quote-parity rule is how two answers to "where does this record end" would
+come to disagree.
+
+**Decision: adopt.** All three bars met, correctness differential-tested
+against the whole-buffer path at every chunk size from 1 upward and across
+300 generated documents. Exporting it is a follow-on: API surface is a
+decision, and this entry is a measurement.

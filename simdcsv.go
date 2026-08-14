@@ -263,6 +263,19 @@ func (r *Reader) trimLeading(f []byte) []byte {
 // once per record, which is quadratic — a 20,000-row file took 17 seconds
 // against the standard library's 3.6 milliseconds.
 func (r *Reader) recordEnd(b []byte) int {
+	end, _ := r.recordEndTerminated(b)
+	return end
+}
+
+// recordEndTerminated is recordEnd with the fact the bounded reader needs:
+// whether the record ended on a newline outside quotes, or simply ran out of
+// buffer. The two are indistinguishable from the offset alone -- both return
+// len(b) when the terminator is the final byte -- and a chunked reader that
+// cannot tell them apart splits records at chunk edges.
+//
+// One walk rather than two: a second implementation of the quote-parity rule
+// is how the two would come to disagree about where a record ends.
+func (r *Reader) recordEndTerminated(b []byte) (int, bool) {
 	off := 0
 	inQuotes := false
 	for {
@@ -275,10 +288,10 @@ func (r *Reader) recordEnd(b []byte) int {
 			inQuotes = !inQuotes
 		}
 		if nl < 0 {
-			return len(b)
+			return len(b), false
 		}
 		if !inQuotes {
-			return off + nl + 1
+			return off + nl + 1, true
 		}
 		off += nl + 1
 	}
