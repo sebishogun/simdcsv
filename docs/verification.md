@@ -56,11 +56,21 @@ field-parity (`Strings()` equality). The corpus:
   ragged (no explicit positive-value case in the suite).
   `TestSemicolonDelimiter` — custom byte delimiter.
 
-**Current verification gap (recorded, pinned by [plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case)):** the
-corpus contains no quoted-field CRLF case. Until the Task 0 policy decision
-and its TDD case land, the overlap definition above is what makes the
-existing suite sound — do not add a `\r\n`-inside-quotes differential case
-in the meantime, and do not claim parity on it.
+**That gap is closed.** The corpus carried no quoted-field CRLF case while
+the two packages disagreed, and the overlap definition excluding the class
+was what kept the suite sound. Plan Task 0/Stage 0 decided the class for
+parity, `quotedRecord` normalizes, and six cases are in the corpus above:
+CRLF inside a quoted field, a doubled CRLF, one in a later field, a lone CR
+mid-field, a lone CR at field end, and a CRLF beside a doubled quote. The
+overlap is now every well-formed input, with no class held back.
+
+**Fuzz gates.** Three targets, each run 90s at the v0.2.0 release gate:
+`FuzzOverlap` (50.1M execs) asserts byte-equality with `encoding/csv` on
+inputs both accept, `FuzzNoPanic` (58.0M) that nothing panics, and
+`FuzzContractMalformed` (8.7M) that a malformed record still yields fields
+aliasing the input and a reader that continues. No failures, so nothing was
+written to `testdata/fuzz` -- inputs the run finds interesting live in the
+build cache, and only a failing input is committed as a regression seed.
 
 **The rule:** a differential test may only feed the overlap. Malformed
 inputs (`a"b`, `"a"b,c`, unclosed quotes) are *documented divergences*

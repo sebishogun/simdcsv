@@ -316,8 +316,7 @@ The complete error surface:
 
 ## 12. Compatibility with `encoding/csv`
 
-### Identical on the declared overlap (well-formed input, excluding
-CRLF-normalization-sensitive quoted data)
+### Identical on the declared overlap (well-formed input)
 
 Verified by the differential tests in `simdcsv_test.go` (hand-written corpus
 plus 400 seeded-random inputs, `TestMatchesStdlib`, `TestMatchesStdlibRandom`)
@@ -331,7 +330,7 @@ comes from `checkCount` (source) and probe confirmation of the error path,
 not from the differential corpus. The tests assert `(stdlib err
 != nil) == (simdcsv err != nil)` and byte-equality of fields via `Strings()`.
 
-**Overlap: CRLF in a quoted field — decided, parity.** A quoted field
+**Overlap: CRLF in a quoted field — decided, parity, shipped.** A quoted field
 containing `\r\n` used to parse differently: simdcsv preserved it,
 `encoding/csv` reduces it to `\n`. Plan Task 0/Stage 0 decided for parity,
 because a field whose bytes differ is silent data corruption for anyone
@@ -366,7 +365,8 @@ and what it rests on. Task 6 of the production plan.
 `Comment` (comment lines), `LazyQuotes`, `FieldPos`,
 `InputOffset`, `TrailingComma` (deprecated in stdlib), rune `Comma`, and the
 `*csv.ParseError` type with `Err`/`Line`/`Column`/`StartLine`.
-`ReuseRecord` exists in both with different `ReadAll` consequences (§10).
+`ReuseRecord` exists in both and now has the same `ReadAll` consequences
+in both: none (§10).
 
 ### Divergent behavior (all probe-verified against Go 1.26.5)
 
@@ -378,19 +378,21 @@ and what it rests on. Task 6 of the production plan.
    `'\n'`, `utf8.RuneError` or any non-UTF-8 rune, and a `Comma` equal to its
    `Comment` when configured ("csv: invalid field or comment delimiter");
    simdcsv accepts any byte. (`Comma = ';'` works identically in both.)
-4. `ReadAll` error shape: simdcsv returns partial records; stdlib returns
-   `nil`.
-5. `ReadAll` + `ReuseRecord`: simdcsv aliases everything to the last record;
-   stdlib allocates each record freshly, independent of `ReuseRecord`.
-6. Quoted-field CRLF normalization (well-formed, probe-verified with exact
-   bytes): `"a\r\nb",c` → simdcsv `["a\r\nb" "c"]`, stdlib `["a\nb" "c"]`.
-   Excluded from the declared overlap; policy decision pending
-   ([plan Task 0/Stage 0](plans/2026-08-13-simdcsv-production.md#task-0-stage-0-quoted-field-crlf-normalization-policy-and-corpus-case)).
+4. `ReadAll` error shape: simdcsv returns the records parsed before the
+   error alongside it; stdlib returns `nil`. Probe, ragged input
+   `a,b\nc\nd,e\n`: simdcsv 1 record and an error, stdlib 0 records and an
+   error. Decided and kept (options table above).
+
+Two entries left this list rather than being explained by it. Quoted-field
+CRLF now normalizes as stdlib does, and `ReadAll` now returns independent
+records whether or not `ReuseRecord` is set -- both probe-verified against
+Go 1.26.5, both defects rather than design, and `wrong.md` holds what they
+cost.
 
 This is why the package is "not a drop-in": the declared overlap is
-identical, the malformed and error surfaces are not, and one well-formed
-input class (quoted CRLF) is documented as diverging with the policy still
-open.
+identical and now includes every well-formed input class, but the malformed
+and error surfaces are not, and four `encoding/csv` options are refused with
+the reasons above.
 
 ## 13. Source-doc defects — fixed (history)
 

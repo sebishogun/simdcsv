@@ -322,7 +322,7 @@ deliverable.
 
 ---
 
-### Task 7: Release gate
+### Task 7: Release gate -- DONE (v0.2.0)
 
 **Files:**
 - Modify: `README.md` (status, only after facts are pinned)
