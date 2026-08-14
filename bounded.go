@@ -19,7 +19,13 @@ import (
 // the memory bound is a chunk plus the longest record rather than the file.
 //
 // One property does not survive the change, and it is the package's main
-// advantage: records cannot outlive the next Read. The whole-buffer path
+// advantage: records cannot outlive the next Read.
+//
+// A copying mode was prototyped and measured (plan task 5) so the caller would
+// not have to think about that, and it was deleted: copying every field costs
+// 1.6x and triples the allocations, and it copies every record when a caller
+// typically keeps few. The caller-side copy is the same work applied only
+// where it is wanted. docs/wrong.md has the numbers. The whole-buffer path
 // returns fields that alias a buffer which never moves; a bounded buffer is
 // compacted and refilled under them. So bounded records carry encoding/csv's
 // contract -- valid until the next call -- and a caller who needs to keep one

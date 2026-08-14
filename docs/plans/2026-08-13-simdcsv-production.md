@@ -251,7 +251,7 @@ or not any code changed".
 
 ---
 
-### Task 5: Streaming-delivery evaluation (prototype, measure, decide)
+### Task 5: Streaming-delivery evaluation (prototype, measure, decide) -- DONE (refused, measured)
 
 **Files:** as Task 4 (`stream_eval.*` temporary files; plan doc; wrong.md
 if missed).

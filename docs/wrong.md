@@ -196,3 +196,40 @@ come to disagree.
 against the whole-buffer path at every chunk size from 1 upward and across
 300 generated documents. Exporting it is a follow-on: API surface is a
 decision, and this entry is a measurement.
+
+## Streaming delivery with copied records: 1.6x and 3x the allocations, rejected
+
+**The evaluation.** Task 4's bounded reader streams -- it returns records
+before EOF -- but it gives up the property the package is built on:
+fields alias the whole input, so a record outlives the reader. Under a
+bounded buffer they cannot, because the buffer is compacted and refilled
+under them. Plan task 5 asked whether that property can be bought back by
+copying each record out as it is delivered, held to task 4's bars.
+
+**Prototyped and measured.** A `copyOut` mode on the bounded reader, one
+allocation for the joined field bytes plus one for the slice headers, per
+record:
+
+    shape              whole      bounded   +copies    vs whole
+    unquoted 4-col    1.67 ms     1.52 ms   2.43 ms      1.45x
+    unquoted 16-col   4.36 ms     4.09 ms   6.58 ms      1.51x
+
+    allocations       20,030      20,013    60,013         3.0x
+
+Against the non-copying bounded path it is 1.60x and 1.61x. The bar was
+1.2x of whole-buffer, so it misses in both shapes, and the allocation
+count triples because two allocations per record are added to a path that
+had one.
+
+**Deleted, and the reason is not only the ratio.** The mode copies every
+record, and a caller streaming a large file typically keeps few -- filter
+first, retain the survivors. The same copy done caller-side is the same
+work applied only where it is wanted, and it needs no API. What ships is
+task 4's shape with the contract change stated: under bounded reading, a
+record is valid until the next `Read`, and a caller who needs one to
+outlive that copies it.
+
+The measurement stands as the reason there is no streaming mode with
+whole-buffer semantics: it is not that it cannot be built, it is that it
+costs 1.6x to build it for everyone instead of 1.6x for the records that
+need it.
